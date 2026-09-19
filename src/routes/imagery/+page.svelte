@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import 'leaflet/dist/leaflet.css';
 	import type * as Leaflet from 'leaflet';
@@ -14,10 +14,10 @@
 		pointValues,
 		normDiff,
 		fmtDate,
+		cogRequestCount,
 		type StacItem,
 		type RenderMode
 	} from '$lib/imagery';
-	import { cogRequestCount } from '$lib/cog';
 
 	let L: typeof Leaflet;
 	let map: Leaflet.Map;
@@ -67,8 +67,6 @@
 
 	onMount(async () => {
 		L = await import('leaflet');
-		// Range Request 数を数えるために Performance API のバッファを広げる（既定 250 件）
-		performance.setResourceTimingBufferSize(20000);
 		// COG をブラウザで直接読んで描く GridLayer
 		CogLayer = L.GridLayer.extend({
 			createTile(this: Leaflet.GridLayer & { options: { item: StacItem; mode: RenderMode; gain: number } }, coords: Leaflet.Coords, done: Leaflet.DoneCallback) {
@@ -76,7 +74,8 @@
 				tile.width = tile.height = 256;
 				renderTile(this.options.item, this.options.mode, this.options.gain, coords.z, coords.x, coords.y, 256)
 					.then((rgba) => {
-						tile.getContext('2d')!.putImageData(new ImageData(rgba, 256, 256), 0, 0);
+						// パンで既に外れたタイルは描かない
+						if (tile.isConnected) tile.getContext('2d')!.putImageData(new ImageData(rgba, 256, 256), 0, 0);
 						done(undefined, tile);
 					})
 					.catch((e) => done(e, tile));
@@ -109,11 +108,14 @@
 	});
 
 	$effect(() => {
-		if (!map) return;
-		for (const [k, l] of Object.entries(basemaps)) {
-			if (k === basemap) l.addTo(map);
-			else map.removeLayer(l);
-		}
+		const b = basemap;
+		untrack(() => {
+			if (!map) return;
+			for (const [k, l] of Object.entries(basemaps)) {
+				if (k === b) l.addTo(map);
+				else map.removeLayer(l);
+			}
+		});
 	});
 
 	function bboxOfMap(): [number, number, number, number] {
@@ -153,6 +155,10 @@
 			maxZoom: 18,
 			minZoom: 8,
 			opacity,
+			// ズームアニメーション中は新しいタイルを要求しない／画面外のバッファは最小に
+			updateWhenZooming: false,
+			updateWhenIdle: true,
+			keepBuffer: 1,
 			// pane: undefined を渡すと Leaflet の既定 'tilePane' が上書きされて落ちる
 			...(pane ? { pane } : {}),
 			bounds: L.latLngBounds([item.bbox[1], item.bbox[0]], [item.bbox[3], item.bbox[2]]),
@@ -206,19 +212,27 @@
 		el.style.clip = `rect(${nw.y}px, ${se.x}px, ${se.y}px, ${x}px)`;
 	}
 
-	// mode / gain 変更でタイル URL を差し替え
+	// mode / gain 変更でレイヤーを作り直す。
+	// refreshLayers 内で tilesLoading などの state を読み書きするので、依存を mode / gain だけに限定する
+	// （untrack しないと effect が自分自身を再トリガーして無限ループになる）
 	$effect(() => {
-		void mode;
+		void mode.kind;
+		void mode.id;
 		void gain;
-		if (map && itemA) refreshLayers();
+		untrack(() => {
+			if (map && itemA) refreshLayers();
+		});
 	});
 	$effect(() => {
-		layerA?.setOpacity(opacity);
-		layerB?.setOpacity(opacity);
+		const o = opacity;
+		untrack(() => {
+			layerA?.setOpacity(o);
+			layerB?.setOpacity(o);
+		});
 	});
 	$effect(() => {
 		void swipe;
-		applySwipe();
+		untrack(applySwipe);
 	});
 
 	async function queryPoint(lat: number, lon: number) {

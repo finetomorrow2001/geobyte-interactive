@@ -5,8 +5,8 @@
  */
 import { fromUrl, Pool, type GeoTIFF, type GeoTIFFImage } from 'geotiff';
 
-/** Web Worker でデフレート展開を並列化（ブラウザのみ） */
-const pool = typeof Worker !== 'undefined' ? new Pool() : undefined;
+/** メインスレッドで使う場合のみ Web Worker でデフレート展開を並列化（Worker 内では入れ子にしない） */
+const pool = typeof window !== 'undefined' && typeof Worker !== 'undefined' ? new Pool() : undefined;
 
 // ---- UTM 順投影（WGS84） ----
 const A = 6378137;
@@ -51,16 +51,53 @@ export function tileToLonLat(x: number, y: number, z: number): [number, number] 
 	return [lon, lat];
 }
 
-/** タイル内の各ピクセルの経緯度を一括計算（メルカトルは行ごとに緯度一定） */
-function tilePixelLonLat(x: number, y: number, z: number, size: number): { lons: Float64Array; lats: Float64Array } {
+/**
+ * タイル内の全ピクセルの UTM 座標 (E, N)。
+ * 投影は滑らかなので 17×17 の格子点だけ厳密に計算し、間は双線形補間する（誤差 < 0.1 m、計算量は 1/200）。
+ * 同じタイルを複数バンドで使うのでキャッシュする。
+ */
+const GRID = 16;
+const projCache = new Map<string, { E: Float64Array; N: Float64Array }>();
+
+export function tileUtm(x: number, y: number, z: number, size: number, epsg: number): { E: Float64Array; N: Float64Array } {
+	const key = `${epsg}|${z}|${x}|${y}|${size}`;
+	const hit = projCache.get(key);
+	if (hit) return hit;
+
 	const n = 2 ** z;
-	const lons = new Float64Array(size);
-	const lats = new Float64Array(size);
-	for (let i = 0; i < size; i++) {
-		lons[i] = ((x + (i + 0.5) / size) / n) * 360 - 180;
-		lats[i] = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + (i + 0.5) / size)) / n))) * 180) / Math.PI;
+	const g = GRID + 1;
+	const gE = new Float64Array(g * g);
+	const gN = new Float64Array(g * g);
+	for (let j = 0; j < g; j++) {
+		const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + j / GRID)) / n))) * 180) / Math.PI;
+		for (let i = 0; i < g; i++) {
+			const lon = ((x + i / GRID) / n) * 360 - 180;
+			const [e, nn] = lonLatToUtm(lon, lat, epsg);
+			gE[j * g + i] = e;
+			gN[j * g + i] = nn;
+		}
 	}
-	return { lons, lats };
+	const E = new Float64Array(size * size);
+	const N = new Float64Array(size * size);
+	const cell = size / GRID;
+	for (let j = 0; j < size; j++) {
+		const v = (j + 0.5) / cell;
+		const j0 = Math.min(GRID - 1, Math.floor(v));
+		const fy = v - j0;
+		for (let i = 0; i < size; i++) {
+			const u = (i + 0.5) / cell;
+			const i0 = Math.min(GRID - 1, Math.floor(u));
+			const fx = u - i0;
+			const a = j0 * g + i0, b = a + 1, c = a + g, d = c + 1;
+			const k = j * size + i;
+			E[k] = (gE[a] * (1 - fx) + gE[b] * fx) * (1 - fy) + (gE[c] * (1 - fx) + gE[d] * fx) * fy;
+			N[k] = (gN[a] * (1 - fx) + gN[b] * fx) * (1 - fy) + (gN[c] * (1 - fx) + gN[d] * fx) * fy;
+		}
+	}
+	if (projCache.size > 64) projCache.delete(projCache.keys().next().value!);
+	const out = { E, N };
+	projCache.set(key, out);
+	return out;
 }
 
 // ---- COG ----
@@ -78,12 +115,6 @@ type CogInfo = {
 };
 
 const cache = new Map<string, Promise<CogInfo>>();
-
-/** ブラウザが発行した COG への HTTP リクエスト数（Performance API で観測） */
-export function cogRequestCount(): number {
-	if (typeof performance === 'undefined') return 0;
-	return performance.getEntriesByType('resource').filter((e) => e.name.includes('sentinel-cogs')).length;
-}
 
 export function openCog(href: string): Promise<CogInfo> {
 	let p = cache.get(href);
@@ -132,7 +163,7 @@ function pickLevel(cog: CogInfo, targetRes: number): { level: number; img: GeoTI
 // COG の内部タイル（512 or 1024 px）単位で読む＆デコードし、隣接する地図タイルが再利用する。
 type Decoded = { data: ArrayLike<number>[]; w: number; h: number; x0: number; y0: number };
 const tileCache = new Map<string, Promise<Decoded>>();
-const TILE_CACHE_MAX = 400;
+const TILE_CACHE_MAX = 120; // 512² × uint16 ≈ 0.5 MB/枚
 
 function getInternalTile(cog: CogInfo, href: string, level: number, tx: number, ty: number): Promise<Decoded> {
 	const key = `${href}|${level}|${tx}|${ty}`;
@@ -164,10 +195,10 @@ export type TileSamples = {
  */
 export async function sampleTile(href: string, epsg: number, z: number, x: number, y: number, size = 256): Promise<TileSamples> {
 	const cog = await openCog(href);
-	const { lons, lats } = tilePixelLonLat(x, y, z, size);
+	const { E, N } = tileUtm(x, y, z, size, epsg);
 
 	// タイル中央の地上分解能からオーバービューを選択
-	const midLat = lats[size >> 1];
+	const [, midLat] = tileToLonLat(x, y + 0.5, z);
 	const groundRes = (156543.03392 * Math.cos((midLat * Math.PI) / 180)) / 2 ** z;
 	const { level, img, scale } = pickLevel(cog, groundRes);
 	const resX = cog.resX * scale;
@@ -181,24 +212,20 @@ export async function sampleTile(href: string, epsg: number, z: number, x: numbe
 	const px = new Int32Array(size * size);
 	const py = new Int32Array(size * size);
 	let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-	for (let j = 0; j < size; j++) {
-		for (let i = 0; i < size; i++) {
-			const [E, N] = lonLatToUtm(lons[i], lats[j], epsg);
-			const cx = Math.floor((E - cog.originX) / resX);
-			const cy = Math.floor((cog.originY - N) / resY);
-			const k = j * size + i;
-			if (cx < 0 || cy < 0 || cx >= W || cy >= H) {
-				px[k] = -1;
-				py[k] = -1;
-				continue;
-			}
-			px[k] = cx;
-			py[k] = cy;
-			if (cx < minX) minX = cx;
-			if (cx > maxX) maxX = cx;
-			if (cy < minY) minY = cy;
-			if (cy > maxY) maxY = cy;
+	for (let k = 0; k < size * size; k++) {
+		const cx = Math.floor((E[k] - cog.originX) / resX);
+		const cy = Math.floor((cog.originY - N[k]) / resY);
+		if (cx < 0 || cy < 0 || cx >= W || cy >= H) {
+			px[k] = -1;
+			py[k] = -1;
+			continue;
 		}
+		px[k] = cx;
+		py[k] = cy;
+		if (cx < minX) minX = cx;
+		if (cx > maxX) maxX = cx;
+		if (cy < minY) minY = cy;
+		if (cy > maxY) maxY = cy;
 	}
 
 	const out = Array.from({ length: cog.bands }, () => new Float32Array(size * size).fill(NaN));

@@ -1,4 +1,4 @@
-import { sampleTile, samplePoint, colormap } from '$lib/cog';
+import type { Job, TileJob, PointJob } from './cog.worker';
 
 export const STAC_API = 'https://earth-search.aws.element84.com/v1';
 export const COLLECTION = 'sentinel-2-l2a';
@@ -73,47 +73,62 @@ export function assetsFor(mode: RenderMode): string[] {
 
 const epsgOf = (item: StacItem) => item.properties['proj:epsg'] ?? 32654;
 
+// ---- Worker プール ----
+// 取得・デコード・再投影・合成はすべて Worker 内で行い、メインスレッドは描画だけ。
+// 隣接する地図タイルは同じ COG 内部タイルを共有するので、2×2 ブロック単位で同じ Worker に割り当てて
+// Worker ごとのキャッシュが効くようにする。
+type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
+let workers: Worker[] | null = null;
+const pending = new Map<number, Pending>();
+let nextId = 1;
+const workerRequests: number[] = [];
+
+/** 全 Worker が発行した COG への HTTP リクエスト数の合計 */
+export const cogRequestCount = () => workerRequests.reduce((a, b) => a + b, 0);
+
+function getWorkers(): Worker[] {
+	if (workers) return workers;
+	const n = Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+	workers = Array.from({ length: n }, (_, i) => {
+		const w = new Worker(new URL('./cog.worker.ts', import.meta.url), { type: 'module' });
+		w.onmessage = (e: MessageEvent<{ id: number; rgba?: Uint8ClampedArray; values?: (number | null)[]; error?: string; requests: number }>) => {
+			workerRequests[i] = e.data.requests;
+			const p = pending.get(e.data.id);
+			if (!p) return;
+			pending.delete(e.data.id);
+			if (e.data.error) p.reject(new Error(e.data.error));
+			else p.resolve(e.data.rgba ?? e.data.values);
+		};
+		return w;
+	});
+	return workers;
+}
+
+function submit<T>(job: Omit<Job, 'id'>, slot: number): Promise<T> {
+	const ws = getWorkers();
+	const id = nextId++;
+	return new Promise<T>((resolve, reject) => {
+		pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+		ws[slot % ws.length].postMessage({ ...job, id });
+	});
+}
+
 /**
- * Web メルカトルタイル 1 枚を描く。COG から必要なウィンドウだけ Range Request で読む。
+ * Web メルカトルタイル 1 枚を描く（Worker 内で COG から必要なウィンドウだけ Range Request で読む）。
  * 戻り値は size*size の RGBA。
  */
 export async function renderTile(item: StacItem, mode: RenderMode, gain: number, z: number, x: number, y: number, size = 256): Promise<Uint8ClampedArray<ArrayBuffer>> {
 	const epsg = epsgOf(item);
-	const rgba = new Uint8ClampedArray(new ArrayBuffer(size * size * 4));
-
+	const slot = ((x >> 1) * 31 + (y >> 1)) >>> 0;
+	let job: Omit<TileJob, 'id'>;
 	if (mode.kind === 'composite') {
 		const c = composites.find((v) => v.id === mode.id)!;
-		const tiles = await Promise.all(c.assets.map((a) => sampleTile(item.assets[a].href, epsg, z, x, y, size)));
-		// visual は 1 ファイル 3 バンド、それ以外は 3 ファイル × 1 バンド
-		const chans = c.assets.length === 1 ? tiles[0].bands.slice(0, 3) : tiles.map((t) => t.bands[0]);
-		const scale = c.rescaleMax ? 255 / (c.rescaleMax / gain) : gain;
-		for (let k = 0; k < size * size; k++) {
-			const r = chans[0][k], g = chans[1][k], b = chans[2][k];
-			if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) continue;
-			rgba[k * 4] = r * scale;
-			rgba[k * 4 + 1] = g * scale;
-			rgba[k * 4 + 2] = b * scale;
-			rgba[k * 4 + 3] = 255;
-		}
+		job = { kind: 'tile', epsg, z, x, y, size, gain, mode: 'composite', hrefs: c.assets.map((a) => item.assets[a].href), rescaleMax: c.rescaleMax };
 	} else {
 		const ix = indices.find((v) => v.id === mode.id)!;
-		const [t1, t2] = await Promise.all([
-			sampleTile(item.assets[ix.b1].href, epsg, z, x, y, size),
-			sampleTile(item.assets[ix.b2].href, epsg, z, x, y, size)
-		]);
-		const a = t1.bands[0], b = t2.bands[0];
-		for (let k = 0; k < size * size; k++) {
-			const va = a[k], vb = b[k];
-			if (Number.isNaN(va) || Number.isNaN(vb) || va + vb === 0) continue;
-			const v = (va - vb) / (va + vb);
-			const [r, g, bl] = colormap(ix.colormap, (v + 1) / 2);
-			rgba[k * 4] = r;
-			rgba[k * 4 + 1] = g;
-			rgba[k * 4 + 2] = bl;
-			rgba[k * 4 + 3] = 255;
-		}
+		job = { kind: 'tile', epsg, z, x, y, size, gain, mode: 'index', hrefs: [item.assets[ix.b1].href, item.assets[ix.b2].href], cmap: ix.colormap };
 	}
-	return rgba;
+	return submit<Uint8ClampedArray<ArrayBuffer>>(job, slot);
 }
 
 export async function searchItems(
@@ -146,19 +161,11 @@ export async function fetchItem(id: string): Promise<StacItem> {
 	return (await res.json()) as StacItem;
 }
 
-/** 1 地点の各アセット DN を、COG からフル解像度で直接読む */
+/** 1 地点の各アセット DN を、COG からフル解像度で直接読む（Worker 経由） */
 export async function pointValues(item: StacItem, lon: number, lat: number, assets: string[]): Promise<Record<string, number | null>> {
-	const epsg = epsgOf(item);
-	const vals = await Promise.all(
-		assets.map(async (a) => {
-			try {
-				const v = await samplePoint(item.assets[a].href, epsg, lon, lat);
-				return v && v[0] !== 0 ? v[0] : null;
-			} catch {
-				return null;
-			}
-		})
-	);
+	const job: Omit<PointJob, 'id'> = { kind: 'point', epsg: epsgOf(item), lon, lat, hrefs: assets.map((a) => item.assets[a].href) };
+	// 地点クエリは 1 つの Worker に集約してヘッダのキャッシュを共有
+	const vals = await submit<(number | null)[]>(job, 0);
 	return Object.fromEntries(assets.map((a, i) => [a, vals[i]]));
 }
 
