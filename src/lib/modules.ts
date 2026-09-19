@@ -45,7 +45,7 @@ export const modules: Module[] = [
 		path: '/imagery',
 		title: '実画像を見る',
 		summary:
-			'Sentinel-2 の実データを地図上でその場レンダリング。バンド合成・NDVI 等の指標・2 時期のスワイプ比較・クリック地点の DN と時系列。',
-		keywords: ['Leaflet', 'titiler', 'Sentinel-2', 'NDVI', '時系列']
+			'Sentinel-2 の実データを、ブラウザが COG を直接読んで地図上にレンダリング。バンド合成・NDVI 等の指標・2 時期のスワイプ比較・クリック地点の DN と時系列。',
+		keywords: ['Leaflet', 'geotiff.js', 'COG', 'NDVI', '時系列']
 	}
 ];

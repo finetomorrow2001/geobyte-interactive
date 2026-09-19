@@ -23,6 +23,7 @@
 	},
 	"dependencies": {
 		"@sveltejs/adapter-vercel": "^6.3.4",
+		"geotiff": "^3.0.5",
 		"leaflet": "^1.9.4"
 	}
 }

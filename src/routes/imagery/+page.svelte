@@ -7,22 +7,24 @@
 		composites,
 		indices,
 		places,
-		tileUrl,
+		renderTile,
+		assetsFor,
 		searchItems,
 		fetchItem,
 		pointValues,
 		normDiff,
 		fmtDate,
-		TITILER,
 		type StacItem,
 		type RenderMode
 	} from '$lib/imagery';
+	import { cogRequestCount } from '$lib/cog';
 
 	let L: typeof Leaflet;
 	let map: Leaflet.Map;
 	let mapEl: HTMLDivElement;
-	let layerA: Leaflet.TileLayer | null = null;
-	let layerB: Leaflet.TileLayer | null = null;
+	let layerA: Leaflet.GridLayer | null = null;
+	let layerB: Leaflet.GridLayer | null = null;
+	let CogLayer: new (opts: Leaflet.GridLayerOptions & { item: StacItem; mode: RenderMode; gain: number }) => Leaflet.GridLayer;
 	let footprint: Leaflet.GeoJSON | null = null;
 	let marker: Leaflet.CircleMarker | null = null;
 	let comparePane: HTMLElement;
@@ -44,8 +46,9 @@
 	let swipe = $state(50);
 	let basemap = $state<'osm' | 'esri'>('osm');
 	let tilesLoading = $state(0);
+	let requests = $state(0);
 
-	const currentTemplate = $derived(itemA ? tileUrl(itemA, mode, gain) : '');
+	const currentAssets = $derived(itemA ? assetsFor(mode).map((a) => ({ a, href: itemA!.assets[a].href })) : []);
 	const modeDesc = $derived(
 		mode.kind === 'composite' ? composites.find((c) => c.id === mode.id)?.desc : indices.find((i) => i.id === mode.id)?.desc
 	);
@@ -64,6 +67,22 @@
 
 	onMount(async () => {
 		L = await import('leaflet');
+		// Range Request 数を数えるために Performance API のバッファを広げる（既定 250 件）
+		performance.setResourceTimingBufferSize(20000);
+		// COG をブラウザで直接読んで描く GridLayer
+		CogLayer = L.GridLayer.extend({
+			createTile(this: Leaflet.GridLayer & { options: { item: StacItem; mode: RenderMode; gain: number } }, coords: Leaflet.Coords, done: Leaflet.DoneCallback) {
+				const tile = document.createElement('canvas');
+				tile.width = tile.height = 256;
+				renderTile(this.options.item, this.options.mode, this.options.gain, coords.z, coords.x, coords.y, 256)
+					.then((rgba) => {
+						tile.getContext('2d')!.putImageData(new ImageData(rgba, 256, 256), 0, 0);
+						done(undefined, tile);
+					})
+					.catch((e) => done(e, tile));
+				return tile;
+			}
+		}) as unknown as typeof CogLayer;
 		map = L.map(mapEl, { center: places[0].center, zoom: places[0].zoom, zoomControl: true });
 		basemaps = {
 			osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }),
@@ -126,18 +145,25 @@
 	}
 
 	function makeLayer(item: StacItem, pane?: string) {
-		const layer = L.tileLayer(tileUrl(item, mode, gain), {
+		const layer = new CogLayer({
+			item,
+			mode: $state.snapshot(mode),
+			gain,
 			tileSize: 256,
 			maxZoom: 18,
-			minZoom: 7,
+			minZoom: 8,
 			opacity,
 			// pane: undefined を渡すと Leaflet の既定 'tilePane' が上書きされて落ちる
 			...(pane ? { pane } : {}),
 			bounds: L.latLngBounds([item.bbox[1], item.bbox[0]], [item.bbox[3], item.bbox[2]]),
-			attribution: 'Sentinel-2 L2A © ESA / Earth Search / titiler.xyz'
+			attribution: 'Sentinel-2 L2A © ESA / Earth Search (AWS)'
 		});
 		layer.on('loading', () => tilesLoading++);
-		layer.on('load', () => (tilesLoading = Math.max(0, tilesLoading - 1)));
+		layer.on('tileload', () => (requests = cogRequestCount()));
+		layer.on('load', () => {
+			tilesLoading = Math.max(0, tilesLoading - 1);
+			requests = cogRequestCount();
+		});
 		return layer;
 	}
 
@@ -242,10 +268,26 @@
 
 <h1>06 実画像を見る</h1>
 <p class="muted">
-	Sentinel-2 の実データを地図上でその場レンダリングします。STAC で検索したシーンの COG を
-	<a href={TITILER} target="_blank" rel="noreferrer">titiler</a> がタイルごとに読み、バンド合成や NDVI をサーバー側で計算して返しています。
+	Sentinel-2 の実データを地図上でその場レンダリングします。サーバーはありません——
+	<strong>ブラウザが COG に直接 HTTP Range Request を発行</strong>し、表示中のタイルに必要な部分だけを読んで、
+	UTM → Web メルカトルの再投影・バンド合成・NDVI 計算をすべてクライアントで行っています。
 	地図をクリックすると、その地点の各バンド DN と指標値を取得します。
 </p>
+
+<details class="panel tight howto" open>
+	<summary><strong>使い方</strong>（クリックで開閉）</summary>
+	<ol>
+		<li><strong>場所を選ぶ</strong> — 下のボタン（東京・富士山…）か、地図をドラッグして「現在の地図中心で再検索」。地図中心を含む Sentinel-2 シーンが最新順に並びます。</li>
+		<li><strong>シーンを選ぶ</strong> — サムネイルをクリックすると <strong>A</strong>（表示レイヤー）に。雲の少ない日付を選ぶのがコツです（☁ は シーン全体の雲量）。</li>
+		<li><strong>表示モードを切り替える</strong> — 「トゥルーカラー」で地形を掴んでから「フォールスカラー」「NDVI」に切り替え、同じ場所の見え方の違いを比べてください。初回はタイル取得に数秒かかります（COG を直接読んでいるため）。2 回目以降はキャッシュで即時です。</li>
+		<li><strong>クリックで値を見る</strong> — 地図上の任意の点をクリック → 右下に 7 バンドの DN と 6 指標の値。森・水・建物・雲・雲影をクリックして NDVI がどう変わるか確かめてください。</li>
+		<li><strong>2 時期を比べる</strong> — サムネイル右上の「B」で比較レイヤーを設定 → 地図中央の橙スライダーを左右にドラッグ。左が A、右が B。値パネルには B − A の差分も出ます。</li>
+		<li><strong>時系列を描く</strong> — 地点をクリックした状態で指標を選び「N シーンで計算」。同じ画素の値を全シーンから読み、季節変化や雲の影響をプロットします。</li>
+	</ol>
+	<p class="muted" style="font-size: 0.85rem; margin: 0.3rem 0 0">
+		おすすめの体験：<strong>富士山</strong>で「NDSI 雪」と「SWIR 合成」（雪と雲の区別）／<strong>琵琶湖</strong>で「NDWI 水域」／<strong>十勝平野</strong>で「農業」合成と 2 時期比較（作物の生育差）／<strong>東京</strong>で皇居・代々木公園と市街地の NDVI 差。
+	</p>
+</details>
 
 <div class="btn-row">
 	{#each places as p (p.name)}
@@ -304,9 +346,13 @@
 			<output>{Math.round(opacity * 100)}%</output>
 			<input id="op" type="range" min="0" max="1" step="0.05" bind:value={opacity} />
 		</div>
+		<div class="grid cols-2" style="margin-top: 0.6rem">
+			<div class="stat"><span class="label">読んでいる COG</span><span class="value">{currentAssets.length}<span class="unit">ファイル</span></span></div>
+			<div class="stat"><span class="label">発行した Range Request</span><span class="value">{requests.toLocaleString()}</span></div>
+		</div>
 		<details>
-			<summary class="muted" style="cursor: pointer; font-size: 0.85rem">タイル URL テンプレート</summary>
-			<pre style="font-size: 0.72rem; white-space: pre-wrap; word-break: break-all"><code>{currentTemplate || '（シーン未選択）'}</code></pre>
+			<summary class="muted" style="cursor: pointer; font-size: 0.85rem">読んでいる COG の URL</summary>
+			<pre style="font-size: 0.72rem; white-space: pre-wrap; word-break: break-all"><code>{currentAssets.length ? currentAssets.map((c) => `${c.a.padEnd(7)} ${c.href}`).join('\n') : '（シーン未選択）'}</code></pre>
 		</details>
 	</div>
 
@@ -412,18 +458,96 @@
 			</svg>
 			<p class="muted" style="font-size: 0.78rem">橙の点はシーン全体の雲量 &gt; 20%。地点が雲に覆われていると値が急落するので、実務では SCL バンドで雲画素を除外してから合成します。</p>
 		{:else}
-			<p class="muted" style="font-size: 0.9rem">地点をクリック → 指標を選んで「計算」。検索結果の各シーンに対して titiler の <code>/stac/point</code> を並列で叩きます。</p>
+			<p class="muted" style="font-size: 0.9rem">地点をクリック → 指標を選んで「計算」。検索結果の各シーンの COG から、該当 1 画素を含む内部タイルだけを並列で読みます。</p>
 		{/if}
 	</div>
 </div>
 
+<h2>解説：実画像の読み方</h2>
+<div class="grid cols-2">
+	<div class="panel">
+		<h3>NDVI の値と地物（東京 2026-08-24 の実測）</h3>
+		<table>
+			<thead><tr><th>地点</th><th class="num">NIR (B8)</th><th class="num">Red (B4)</th><th class="num">NDVI</th></tr></thead>
+			<tbody>
+				<tr><td>皇居の森</td><td class="num">2465</td><td class="num">323</td><td class="num" style="color: var(--green)">+0.77</td></tr>
+				<tr><td>市街地（住宅・道路）</td><td class="num">1500</td><td class="num">1296</td><td class="num">+0.07</td></tr>
+			</tbody>
+		</table>
+		<p style="font-size: 0.9rem">
+			DN は反射率 × 10000。森は赤をわずか 3% しか返さず NIR を 25% 返す——この段差（レッドエッジ）は葉の細胞構造とクロロフィルに由来し、植生にしかありません。
+			<code>(NIR − Red) / (NIR + Red)</code> と<strong>和で割る</strong>ことで太陽高度や斜面向きによる明るさの差が打ち消され、日付・場所をまたいで比較できる値になります。
+		</p>
+		<table style="font-size: 0.85rem">
+			<thead><tr><th>NDVI</th><th>典型的な地物</th></tr></thead>
+			<tbody>
+				<tr><td class="num" style="color: var(--red)">&lt; 0</td><td>水、雪、雲の影</td></tr>
+				<tr><td class="num">0〜0.2</td><td>裸地、都市、岩、<strong>雲</strong>（NIR も Red も高いため 0 付近）</td></tr>
+				<tr><td class="num">0.2〜0.5</td><td>草地、疎な植生、生育初期の作物</td></tr>
+				<tr><td class="num" style="color: var(--green)">&gt; 0.6</td><td>森林、成熟した作物（0.8〜0.9 で飽和し密度差は見えなくなる）</td></tr>
+			</tbody>
+		</table>
+	</div>
+	<div class="panel">
+		<h3>NDVI 画像で気をつけること</h3>
+		<ul style="font-size: 0.9rem; padding-left: 1.2rem; margin: 0.3rem 0">
+			<li><strong>雲は市街地と同じ黄色</strong>に見える。NDVI だけでは区別できないので、実務では SCL（シーン分類）バンドで雲・影の画素を除外してから使う。</li>
+			<li><strong>雲の影は水と同じ赤</strong>に見える。トゥルーカラーで雲の位置を確認し、その南〜東側（太陽の反対）の赤い塊は影と読む。</li>
+			<li><strong>ミクセル</strong>：10 m 画素に街路樹と道路が混ざると 0.2〜0.3 の中間値が出る。都市の緑被率を見るなら閾値ではなく連続値で扱う。</li>
+			<li><strong>季節性</strong>：水田は田植え直後に負（水面）→ 夏に 0.8 → 収穫で急落。1 枚の値ではなく時系列の形で作物を判別する。</li>
+			<li><strong>飽和</strong>：密な森林は NDVI 0.85 あたりで頭打ち。バイオマスの差を見るなら EVI や NDRE（レッドエッジ B5/B6）を使う。</li>
+		</ul>
+	</div>
+</div>
+
+<div class="grid cols-2">
+	<div class="panel">
+		<h3>合成モードの使い分け</h3>
+		<table style="font-size: 0.85rem">
+			<tbody>
+				<tr><td><strong>トゥルーカラー</strong></td><td>まず地形・雲を把握する。植生は暗い緑で差が見づらい。</td></tr>
+				<tr><td><strong>フォールスカラー</strong></td><td>植生の活性を「赤の濃さ」で見る。水は黒く、境界が明瞭。</td></tr>
+				<tr><td><strong>SWIR 合成</strong></td><td>雲（白）と雪（青）を分ける。焼失跡・裸地が赤紫。</td></tr>
+				<tr><td><strong>農業</strong></td><td>作物の生育差が緑の濃淡に。畝や区画ごとの違いを見る。</td></tr>
+				<tr><td><strong>都市</strong></td><td>建物・舗装が明るく、植生が暗い。都市域の抽出に。</td></tr>
+			</tbody>
+		</table>
+	</div>
+	<div class="panel">
+		<h3>2 時期比較と時系列の使い道</h3>
+		<ul style="font-size: 0.9rem; padding-left: 1.2rem; margin: 0.3rem 0">
+			<li><strong>災害</strong>：洪水前後の NDWI、山火事前後の NBR（差分 dNBR で被害度）。</li>
+			<li><strong>農業</strong>：田植え〜収穫の NDVI 波形で作付け作物を推定。区画ごとの生育ムラ。</li>
+			<li><strong>都市開発</strong>：数年離れた 2 シーンの NDBI／NDVI 差で造成地を抽出。</li>
+			<li><strong>雪・水資源</strong>：NDSI の時系列で融雪時期、NDWI で湖面の季節変動。</li>
+		</ul>
+		<p class="muted" style="font-size: 0.85rem">
+			時系列チャートの橙の点はシーン全体の雲量が 20% 超。値が突然落ちていたら、その地点が雲か影に覆われている可能性が高い。
+		</p>
+	</div>
+</div>
+
 <div class="note">
-	<strong>ここで起きていること：</strong> ① ブラウザが Earth Search（STAC）でシーンを検索 → ② 選んだ Item の URL を titiler に渡す →
-	③ titiler が Item の assets から該当 COG を開き、表示中のタイル範囲だけ HTTP Range で読む → ④ バンド合成／<code>normalizedIndex</code> を計算して PNG を返す。
-	ダウンロードは一切していません。05 で見た COG のタイル構造が、そのまま地図タイルの速さに繋がっています。
+	<strong>ここで起きていること：</strong> ① ブラウザが Earth Search（STAC）でシーンを検索 → ② 選んだ Item の assets から COG の URL を取得 →
+	③ <code>geotiff.js</code> が COG のヘッダ（IFD）を読み、表示ズームに合うオーバービューを選ぶ → ④ 地図タイルごとに、必要な UTM 範囲の内部タイルだけを Range Request で取得 →
+	⑤ 各画素を経緯度 → UTM に投影して最近傍サンプリング、合成／指標計算して Canvas に描く。
+	サーバーもダウンロードも無し。05 で見た COG のタイル構造が、そのままブラウザ上の地図の速さに繋がっています。
+	開発者ツールの Network タブで <code>sentinel-cogs.s3</code> へのリクエストを見ると、<code>Range: bytes=…</code> ヘッダと <code>206 Partial Content</code> が確認できます。
 </div>
 
 <style>
+	.howto summary {
+		cursor: pointer;
+		font-size: 0.95rem;
+	}
+	.howto ol {
+		padding-left: 1.3rem;
+		margin: 0.5rem 0;
+		font-size: 0.9rem;
+	}
+	.howto li {
+		margin: 0.25rem 0;
+	}
 	.mapwrap {
 		position: relative;
 		margin: 0.5rem 0 1rem;

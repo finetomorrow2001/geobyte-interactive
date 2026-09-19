@@ -245,6 +245,12 @@ canvas {
 	border-radius: 8px;
 	border: 1px solid var(--border);
 }
+/* Leaflet の地図タイル（canvas）には枠を付けない */
+.leaflet-tile {
+	border: none !important;
+	border-radius: 0 !important;
+	image-rendering: auto;
+}
 
 .tag {
 	display: inline-block;
