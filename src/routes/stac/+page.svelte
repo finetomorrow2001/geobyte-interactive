@@ -206,7 +206,12 @@ with rasterio.open(href) as src:
 
 	{#if openItem}
 		<div class="panel">
-			<h3>{openItem.id} の assets（{Object.keys(openItem.assets).length} 個）</h3>
+			<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap">
+				<h3>{openItem.id} の assets（{Object.keys(openItem.assets).length} 個）</h3>
+				{#if collection === 'sentinel-2-l2a'}
+					<a href="/imagery?item={openItem.id}" style="font-size: 0.9rem">🗺 このシーンを地図で見る →</a>
+				{/if}
+			</div>
 			<p class="muted" style="font-size: 0.85rem">STAC Item の本体。1 シーン = 複数ファイル（バンドごとの COG、メタデータ、サムネイル）で構成されています。</p>
 			<div style="overflow-x: auto">
 				<table>

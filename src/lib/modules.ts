@@ -40,5 +40,12 @@ export const modules: Module[] = [
 		summary:
 			'COG のタイル／オーバービューと HTTP Range Request、Zarr のチャンク、L0〜L2 と ARD の違いを図で理解する。',
 		keywords: ['COG', 'Zarr', 'L1C/L2A', 'ARD', 'SAR']
+	},
+	{
+		path: '/imagery',
+		title: '実画像を見る',
+		summary:
+			'Sentinel-2 の実データを地図上でその場レンダリング。バンド合成・NDVI 等の指標・2 時期のスワイプ比較・クリック地点の DN と時系列。',
+		keywords: ['Leaflet', 'titiler', 'Sentinel-2', 'NDVI', '時系列']
 	}
 ];
