@@ -311,6 +311,26 @@
 		mapA.easeTo({ bearing: 0, duration: 500 });
 	}
 
+	/** 比較境界のつまみをドラッグ（ポインタキャプチャで地図のドラッグを奪わせない） */
+	function startSwipe(e: PointerEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		const el = e.currentTarget as HTMLElement;
+		el.setPointerCapture(e.pointerId);
+		const move = (ev: PointerEvent) => {
+			const r = mapWrapEl.getBoundingClientRect();
+			swipe = Math.max(0, Math.min(100, ((ev.clientX - r.left) / r.width) * 100));
+		};
+		const up = () => {
+			el.removeEventListener('pointermove', move);
+			el.removeEventListener('pointerup', up);
+			el.removeEventListener('pointercancel', up);
+		};
+		el.addEventListener('pointermove', move);
+		el.addEventListener('pointerup', up);
+		el.addEventListener('pointercancel', up);
+	}
+
 	async function toggleFullscreen() {
 		if (document.fullscreenEnabled) {
 			if (document.fullscreenElement === mapWrapEl) await document.exitFullscreen();
@@ -828,7 +848,23 @@
 		</div>
 	{/if}
 	{#if itemB}
-		<input class="swipe" type="range" min="0" max="100" step="0.5" bind:value={swipe} aria-label={t('mapSwipeAria')} />
+		<!-- 比較の境界線。地図全幅のスライダーだと右上の UI に重なるので、境界線 + 中央のつまみだけにする -->
+		<div class="divider" style:left="{swipe}%">
+			<div class="line"></div>
+			<button
+				class="handle"
+				onpointerdown={startSwipe}
+				onkeydown={(e) => { if (e.key === 'ArrowLeft') swipe = Math.max(0, swipe - 1); else if (e.key === 'ArrowRight') swipe = Math.min(100, swipe + 1); }}
+				aria-label={t('mapSwipeAria')}
+				role="slider"
+				aria-valuemin="0"
+				aria-valuemax="100"
+				aria-valuenow={Math.round(swipe)}
+				title={t('mapSwipeAria')}
+			>
+				<span class="ab">A</span><span class="arrows">◀ ▶</span><span class="ab">B</span>
+			</button>
+		</div>
 	{/if}
 </div>
 <p class="muted" style="font-size: 0.78rem; margin-top: -0.6rem">
@@ -1450,16 +1486,54 @@
 		font-size: 0.8rem;
 		font-family: var(--mono);
 	}
-	.swipe {
+	.divider {
 		position: absolute;
-		left: 0;
-		right: 0;
+		top: 0;
+		bottom: 0;
+		width: 0;
+		z-index: 7;
+		pointer-events: none;
+	}
+	.divider .line {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: -1px;
+		width: 2px;
+		background: var(--orange);
+		box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+	}
+	.divider .handle {
+		position: absolute;
 		top: 50%;
-		z-index: 6;
-		width: 100%;
-		margin: 0;
-		accent-color: var(--orange);
+		left: 0;
+		transform: translate(-50%, -50%);
 		pointer-events: auto;
+		touch-action: none;
+		cursor: ew-resize;
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		padding: 0.25rem 0.55rem;
+		border-radius: 999px;
+		background: var(--orange);
+		color: #071022;
+		border: 2px solid #071022;
+		font-size: 0.72rem;
+		font-weight: 700;
+		line-height: 1;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+		user-select: none;
+	}
+	.divider .handle:focus-visible {
+		outline: 2px solid var(--accent-2);
+		outline-offset: 2px;
+	}
+	.divider .arrows {
+		letter-spacing: -1px;
+	}
+	.divider .ab {
+		font-family: var(--mono);
 	}
 	.strip {
 		display: flex;

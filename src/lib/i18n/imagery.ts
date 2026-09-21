@@ -16,7 +16,7 @@ export const imagery = {
 		howto3: '<strong>表示モードを切り替える</strong> — 「トゥルーカラー」で地形を掴んでから「フォールスカラー」「NDVI」に切り替え、同じ場所の見え方の違いを比べてください。初回はタイル取得に数秒かかります（COG を直接読んでいるため）。2 回目以降はキャッシュで即時です。',
 		howto4: '<strong>3D で見る</strong> — 地図右上の「3D」で標高データを重ねて傾けます。右ドラッグ（または Ctrl+ドラッグ）で回転・傾き、コンパスをクリックすると北が上に戻ります。コンパスには <span style="color: #f1fa8c">☀ 撮影時の太陽方位 (sun azimuth)</span>と<span style="color: var(--green)">▲ 衛星の進行方向</span>も出ます。雲の影は ☀ の反対側に落ちます。',
 		howto5: '<strong>クリックで値を見る</strong> — 地図上の任意の点をクリック → 右下に 7 バンドの DN と 6 指標の値。森・水・建物・雲・雲影をクリックして NDVI がどう変わるか確かめてください。',
-		howto6: '<strong>2 時期を比べる</strong> — サムネイル右上の「B」で比較レイヤーを設定 → 地図中央の橙スライダーを左右にドラッグ。左が A、右が B。値パネルには B − A の差分も出ます。',
+		howto6: '<strong>2 時期を比べる</strong> — サムネイル右上の「B」で比較レイヤーを設定 → 地図上の橙の境界線にある「A ◀ ▶ B」のつまみを左右にドラッグ。左が A、右が B。値パネルには B − A の差分も出ます。',
 		howto7: '<strong>衛星をリアルタイムで追う</strong> — 地図右上の「🛰 軌道」で、実際の TLE から計算した Sentinel-2A/2B/2C の現在位置（1 秒更新）、軌道直下 (sub-satellite point / ground track) の軌跡、撮影中の<strong>観測幅 (swath) 290 km</strong>（塗り）と<strong>いま見ている 1 ライン</strong>（太線）を重ねます。点線区間は夜側・上昇側で撮影していません。時刻バーの ▶（60 倍速）やスライダーで過去（検索期間）〜未来 10 日をスクラブでき、地図の場所を観測幅が横切る瞬間が見えます。「画像も表示時刻に同期」が ON なら、スライダーの目盛り（過去のシーンの撮影時刻）を過ぎるたびに画像 A がそのシーンに切り替わります——衛星が通過した瞬間と、その時撮れた画像が結び付きます。なお衛星の位置は 1 秒ごとに動きますが、画像は撮影日ごとの静止画なので連続的には変化しません。',
 		howto8: '<strong>次の撮影を予測する</strong> — 「次にここが撮影されるのは」パネルに、地図中心が観測幅に入る日時が出ます。行をクリックすると表示時刻がその瞬間に飛び、衛星が真上を通る様子と観測幅を確認できます。検索結果のシーン日付と見比べてください。',
 		howtoTips: 'おすすめの体験：<strong>富士山</strong>で 3D + 「NDSI 雪」と「SWIR 合成」（雪と雲の区別）／<strong>琵琶湖</strong>で「NDWI 水域」／<strong>十勝平野</strong>で「農業」合成と 2 時期比較（作物の生育差）／<strong>東京</strong>で皇居・代々木公園と市街地の NDVI 差。',
@@ -58,7 +58,7 @@ export const imagery = {
 		mapLoadingTiles: 'タイル読込中…',
 		mapLegendCloud: (pct: string) => `雲 ${pct}%`,
 		mapLegendRight: '（右側）',
-		mapSwipeAria: '比較スワイプ',
+		mapSwipeAria: '比較の境界をドラッグ（左 A / 右 B、矢印キーでも可）',
 		mapHint: '右ドラッグ / Ctrl+ドラッグで回転・傾き。「衛星写真」ベースマップと 3D の標高タイルは、選んだ時に初めて読み込みます。',
 
 		// ---- 検索 ----
@@ -210,7 +210,7 @@ export const imagery = {
 		howto3: '<strong>Switch render mode</strong> — get your bearings in “True color”, then switch to “False color” and “NDVI” and compare how the same place looks. The first load takes a few seconds (the COG is read directly); later loads are instant from cache.',
 		howto4: '<strong>View in 3D</strong> — “3D” at the top right of the map overlays elevation data and tilts the view. Right-drag (or Ctrl+drag) to rotate and tilt; click the compass to return north to the top. The compass also shows <span style="color: #f1fa8c">☀ sun azimuth at acquisition</span> and <span style="color: var(--green)">▲ satellite heading</span>. Cloud shadows fall on the side opposite ☀.',
 		howto5: '<strong>Click for values</strong> — click anywhere on the map → the bottom-right shows DNs for 7 bands and 6 index values. Click forest, water, buildings, cloud and cloud shadow and see how NDVI changes.',
-		howto6: '<strong>Compare two dates</strong> — set a comparison layer with “B” at the top right of a thumbnail → drag the orange slider in the middle of the map. A on the left, B on the right. The value panel also shows the B − A difference.',
+		howto6: '<strong>Compare two dates</strong> — set a comparison layer with “B” at the top right of a thumbnail → drag the “A ◀ ▶ B” handle on the orange divider left or right. A on the left, B on the right. The value panel also shows the B − A difference.',
 		howto7: '<strong>Track the satellites live</strong> — “🛰 Orbit” at the top right overlays the current positions of Sentinel-2A/2B/2C computed from real TLEs (updated every second), the sub-satellite ground track, the <strong>290 km swath</strong> being imaged (fill) and <strong>the line the sensor sees right now</strong> (thick line). Dashed segments are the night / ascending side, where no imaging happens. Use ▶ (60× speed) or the slider in the time bar to scrub from the search window into the next 10 days and watch the swath cross your location. With “Sync imagery to this time” on, layer A switches to the matching scene each time you pass a tick (a past acquisition), linking the moment the satellite flew over to the image it took. Note that satellite positions move every second, but imagery is a still per acquisition date and does not change continuously.',
 		howto8: '<strong>Predict the next acquisition</strong> — the “Next acquisition here” panel lists when the map centre falls inside the swath. Click a row to jump the displayed time to that instant and see the satellite pass overhead with its swath. Compare with the scene dates in the search results.',
 		howtoTips: 'Suggested tour: <strong>Mt. Fuji</strong> in 3D with “NDSI snow” and “SWIR composite” (snow vs. cloud) / <strong>Lake Biwa</strong> with “NDWI water” / <strong>Tokachi Plain</strong> with the “Agriculture” composite and a two-date comparison (crop growth) / <strong>Tokyo</strong> for the NDVI contrast between the Imperial Palace, Yoyogi Park and the built-up area.',
@@ -252,7 +252,7 @@ export const imagery = {
 		mapLoadingTiles: 'Loading tiles…',
 		mapLegendCloud: (pct: string) => `cloud ${pct}%`,
 		mapLegendRight: '(right side)',
-		mapSwipeAria: 'Comparison swipe',
+		mapSwipeAria: 'Drag the comparison divider (A left / B right; arrow keys also work)',
 		mapHint: 'Right-drag / Ctrl+drag to rotate and tilt. The “Satellite” basemap and the 3D elevation tiles are loaded only when first selected.',
 
 		// ---- Search ----
