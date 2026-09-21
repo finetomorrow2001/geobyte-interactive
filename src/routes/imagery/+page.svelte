@@ -41,6 +41,10 @@
 		type StacItem,
 		type RenderMode
 	} from '$lib/imagery';
+	import { makeT, L } from '$lib/i18n/lang.svelte';
+	import { imagery as dict } from '$lib/i18n/imagery';
+
+	const t = makeT(dict);
 
 	type MLMap = ML.Map;
 	let ml: typeof ML;
@@ -80,6 +84,7 @@
 	const modeDesc = $derived(
 		mode.kind === 'composite' ? composites.find((c) => c.id === mode.id)?.desc : indices.find((i) => i.id === mode.id)?.desc
 	);
+	const modeDescText = $derived(modeDesc ? L(modeDesc) : '');
 	const num = (v: unknown) => (typeof v === 'number' ? v : null);
 	const sunAz = $derived(itemA ? num(itemA.properties['view:sun_azimuth']) : null);
 	const sunEl = $derived(itemA ? num(itemA.properties['view:sun_elevation']) : null);
@@ -393,7 +398,7 @@
 			const d = 0.02;
 			items = await searchItems([c.lng - d, c.lat - d, c.lng + d, c.lat + d], days, maxCloud);
 			if (items.length && !items.find((i) => i.id === itemA?.id)) selectA(items[0]);
-			if (!items.length) error = '条件に合うシーンがありません。期間を伸ばすか雲量上限を上げてください。';
+			if (!items.length) error = t('searchNoScenes');
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
@@ -620,37 +625,34 @@
 </script>
 
 <svelte:head>
-	<title>実画像を見る — Satellite Data Lab</title>
+	<title>{t('title')}</title>
 </svelte:head>
 
-<h1>06 実画像を見る</h1>
+<h1>{t('h1')}</h1>
 <p class="muted">
-	Sentinel-2 の実データを地図上でその場レンダリングします。サーバーはありません——
-	<strong>ブラウザが COG に直接 HTTP Range Request を発行</strong>し、表示中のタイルに必要な部分だけを読んで、
-	UTM → Web メルカトルの再投影・バンド合成・NDVI 計算をすべてクライアントで行っています。
-	地図をクリックすると、その地点の各バンド DN と指標値を取得します。
+	{t('lead1')}<strong>{t('leadStrong')}</strong>{t('lead2')}
 </p>
 
 <details class="panel tight howto" open>
-	<summary><strong>使い方</strong>（クリックで開閉）</summary>
+	<summary><strong>{t('howtoTitle')}</strong>{t('howtoToggle')}</summary>
 	<ol>
-		<li><strong>場所を選ぶ</strong> — 下のボタン（東京・富士山…）か、地図をドラッグして「現在の地図中心で再検索」。地図中心を含む Sentinel-2 シーンが最新順に並びます。</li>
-		<li><strong>シーンを選ぶ</strong> — サムネイルをクリックすると <strong>A</strong>（表示レイヤー）に。雲の少ない日付を選ぶのがコツです（☁ は シーン全体の雲量）。</li>
-		<li><strong>表示モードを切り替える</strong> — 「トゥルーカラー」で地形を掴んでから「フォールスカラー」「NDVI」に切り替え、同じ場所の見え方の違いを比べてください。初回はタイル取得に数秒かかります（COG を直接読んでいるため）。2 回目以降はキャッシュで即時です。</li>
-		<li><strong>3D で見る</strong> — 地図右上の「3D」で標高データを重ねて傾けます。右ドラッグ（または Ctrl+ドラッグ）で回転・傾き、コンパスをクリックすると北が上に戻ります。コンパスには <span style="color: #f1fa8c">☀ 撮影時の太陽方位</span>と<span style="color: var(--green)">▲ 衛星の進行方向</span>も出ます。雲の影は ☀ の反対側に落ちます。</li>
-		<li><strong>クリックで値を見る</strong> — 地図上の任意の点をクリック → 右下に 7 バンドの DN と 6 指標の値。森・水・建物・雲・雲影をクリックして NDVI がどう変わるか確かめてください。</li>
-		<li><strong>2 時期を比べる</strong> — サムネイル右上の「B」で比較レイヤーを設定 → 地図中央の橙スライダーを左右にドラッグ。左が A、右が B。値パネルには B − A の差分も出ます。</li>
-		<li><strong>衛星をリアルタイムで追う</strong> — 地図右上の「🛰 軌道」で、実際の TLE から計算した Sentinel-2A/2B/2C の現在位置（1 秒更新）、軌道直下の軌跡、撮影中の<strong>観測幅 290 km</strong>（塗り）と<strong>いま見ている 1 ライン</strong>（太線）を重ねます。点線区間は夜側・上昇側で撮影していません。時刻バーの ▶（60 倍速）やスライダーで前後 24 時間をスクラブでき、地図の場所を観測幅が横切る瞬間が見えます。</li>
-		<li><strong>次の撮影を予測する</strong> — 「次にここが撮影されるのは」パネルに、地図中心が観測幅に入る日時が出ます。行をクリックすると表示時刻がその瞬間に飛び、衛星が真上を通る様子と観測幅を確認できます。検索結果のシーン日付と見比べてください。</li>
+		<li>{@html t('howto1')}</li>
+		<li>{@html t('howto2')}</li>
+		<li>{@html t('howto3')}</li>
+		<li>{@html t('howto4')}</li>
+		<li>{@html t('howto5')}</li>
+		<li>{@html t('howto6')}</li>
+		<li>{@html t('howto7')}</li>
+		<li>{@html t('howto8')}</li>
 	</ol>
 	<p class="muted" style="font-size: 0.85rem; margin: 0.3rem 0 0">
-		おすすめの体験：<strong>富士山</strong>で 3D + 「NDSI 雪」と「SWIR 合成」（雪と雲の区別）／<strong>琵琶湖</strong>で「NDWI 水域」／<strong>十勝平野</strong>で「農業」合成と 2 時期比較（作物の生育差）／<strong>東京</strong>で皇居・代々木公園と市街地の NDVI 差。
+		{@html t('howtoTips')}
 	</p>
 </details>
 
 <div class="btn-row">
-	{#each places as p (p.name)}
-		<button class="ghost" onclick={() => goto(p)} title={p.hint}>{p.name}</button>
+	{#each places as p (p.id)}
+		<button class="ghost" onclick={() => goto(p)} title={L(p.hint)}>{L(p.name)}</button>
 	{/each}
 </div>
 
@@ -662,14 +664,14 @@
 	<div bind:this={mapElB} class="map mapB" class:hidden={!itemB} style:clip-path="inset(0 0 0 {swipe}%)"></div>
 
 	<div class="map-ui">
-		<div class="seg" role="group" aria-label="ベースマップ">
-			<button class:active={basemap === 'osm'} onclick={() => (basemap = 'osm')}>地図</button>
-			<button class:active={basemap === 'esri'} onclick={() => (basemap = 'esri')} title="Esri World Imagery。選んだ時に初めて読み込みます">衛星写真</button>
+		<div class="seg" role="group" aria-label={t('mapBasemapGroup')}>
+			<button class:active={basemap === 'osm'} onclick={() => (basemap = 'osm')}>{t('mapBasemapOsm')}</button>
+			<button class:active={basemap === 'esri'} onclick={() => (basemap = 'esri')} title={t('mapBasemapEsriTitle')}>{t('mapBasemapEsri')}</button>
 		</div>
 		<div class="seg" role="group" aria-label="2D / 3D">
 			<button class:active={!is3D} onclick={() => (is3D = false)}>2D</button>
-			<button class:active={is3D} onclick={() => (is3D = true)} title="標高タイルを重ねて傾けます">3D</button>
-			<button class="fs" onclick={toggleFullscreen} title={fullscreen ? '全画面を終了 (Esc)' : '地図を全画面に'} aria-label={fullscreen ? '全画面を終了' : '地図を全画面に'}>
+			<button class:active={is3D} onclick={() => (is3D = true)} title={t('map3dTitle')}>3D</button>
+			<button class="fs" onclick={toggleFullscreen} title={fullscreen ? t('mapFsExitTitle') : t('mapFsEnterTitle')} aria-label={fullscreen ? t('mapFsExit') : t('mapFsEnter')}>
 				{#if fullscreen}
 					<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" /></svg>
 				{:else}
@@ -679,47 +681,47 @@
 		</div>
 		<div class="compass-box">
 			<Compass {bearing} {pitch} sunAzimuth={sunAz} sunElevation={sunEl} {trackHeading} onreset={resetNorth} />
-			<div class="compass-key"><span style="color: #f1fa8c">●</span> 太陽 <span style="color: var(--green)">▲</span> 衛星の進行方向</div>
+			<div class="compass-key"><span style="color: #f1fa8c">●</span> {t('mapKeySun')} <span style="color: var(--green)">▲</span> {t('mapKeyTrack')}</div>
 		</div>
-		<button class="seg-toggle" class:active={showOrbit} onclick={() => (showOrbit = !showOrbit)} title="Sentinel-2A/2B/2C の位置・軌道直下の軌跡・観測幅（実 TLE から計算）">🛰 軌道 {showOrbit ? 'ON' : 'OFF'}</button>
+		<button class="seg-toggle" class:active={showOrbit} onclick={() => (showOrbit = !showOrbit)} title={t('mapOrbitTitle')}>{t('mapOrbitBtn', showOrbit)}</button>
 		{#if showOrbit && tleSet}
 			<div class="timebar">
 				<div class="t"><span class="mono">{fmtJst(shownTime)}</span> <span class="off" class:live={timeOffsetMin === 0}>{fmtOffset(timeOffsetMin)}</span></div>
 				<div class="row">
-					<button onclick={() => setOffset(timeOffsetMin - 60)} title="1 時間戻す">−1h</button>
-					<button onclick={() => setOffset(timeOffsetMin - 10)} title="10 分戻す">−10m</button>
-					<button class:active={playing} onclick={() => { playing = !playing; }} title="60 倍速で再生">{playing ? '❚❚' : '▶'}</button>
-					<button onclick={() => setOffset(timeOffsetMin + 10)} title="10 分進める">+10m</button>
-					<button onclick={() => setOffset(timeOffsetMin + 60)} title="1 時間進める">+1h</button>
+					<button onclick={() => setOffset(timeOffsetMin - 60)} title={t('mapTimeBack1h')}>−1h</button>
+					<button onclick={() => setOffset(timeOffsetMin - 10)} title={t('mapTimeBack10m')}>−10m</button>
+					<button class:active={playing} onclick={() => { playing = !playing; }} title={t('mapTimePlay')}>{playing ? '❚❚' : '▶'}</button>
+					<button onclick={() => setOffset(timeOffsetMin + 10)} title={t('mapTimeFwd10m')}>+10m</button>
+					<button onclick={() => setOffset(timeOffsetMin + 60)} title={t('mapTimeFwd1h')}>+1h</button>
 					<button class="live" disabled={timeOffsetMin === 0 && !playing} onclick={() => setOffset(0)}>LIVE</button>
 				</div>
-				<input type="range" min="-1440" max="1440" step="1" value={timeOffsetMin} oninput={(e) => setOffset(+e.currentTarget.value)} aria-label="表示時刻のオフセット（分）" />
+				<input type="range" min="-1440" max="1440" step="1" value={timeOffsetMin} oninput={(e) => setOffset(+e.currentTarget.value)} aria-label={t('mapTimeOffsetAria')} />
 				<div class="key">
-					<span><i class="k-swath"></i>撮影中の観測幅 290 km</span>
-					<span><i class="k-scan"></i>いま見ている 1 ライン</span>
-					<span><i class="k-dash"></i>夜側・上昇側（撮影なし）</span>
+					<span><i class="k-swath"></i>{t('mapKeySwath')}</span>
+					<span><i class="k-scan"></i>{t('mapKeyScan')}</span>
+					<span><i class="k-dash"></i>{t('mapKeyDash')}</span>
 				</div>
 			</div>
 		{/if}
 	</div>
 
 	{#if tilesLoading || loading}
-		<div class="loading">{loading ? 'STAC 検索中…' : 'タイル読込中…'}</div>
+		<div class="loading">{loading ? t('mapLoadingStac') : t('mapLoadingTiles')}</div>
 	{/if}
 	{#if itemA}
 		<div class="legend">
-			<div><strong>A</strong> {fmtDate(itemA.properties.datetime)} <span class="muted">{satLabel(itemA)} · 雲 {cloud(itemA)?.toFixed(0)}%</span></div>
+			<div><strong>A</strong> {fmtDate(itemA.properties.datetime)} <span class="muted">{satLabel(itemA)} · {t('mapLegendCloud', cloud(itemA)?.toFixed(0))}</span></div>
 			{#if itemB}
-				<div><strong>B</strong> {fmtDate(itemB.properties.datetime)} <span class="muted">{satLabel(itemB)} · 雲 {cloud(itemB)?.toFixed(0)}%</span> <span class="muted">（右側）</span></div>
+				<div><strong>B</strong> {fmtDate(itemB.properties.datetime)} <span class="muted">{satLabel(itemB)} · {t('mapLegendCloud', cloud(itemB)?.toFixed(0))}</span> <span class="muted">{t('mapLegendRight')}</span></div>
 			{/if}
 		</div>
 	{/if}
 	{#if itemB}
-		<input class="swipe" type="range" min="0" max="100" step="0.5" bind:value={swipe} aria-label="比較スワイプ" />
+		<input class="swipe" type="range" min="0" max="100" step="0.5" bind:value={swipe} aria-label={t('mapSwipeAria')} />
 	{/if}
 </div>
 <p class="muted" style="font-size: 0.78rem; margin-top: -0.6rem">
-	右ドラッグ / Ctrl+ドラッグで回転・傾き。「衛星写真」ベースマップと 3D の標高タイルは、選んだ時に初めて読み込みます。
+	{t('mapHint')}
 </p>
 
 {#if error}
@@ -728,55 +730,55 @@
 
 <div class="grid cols-2">
 	<div class="panel">
-		<h3>表示モード</h3>
+		<h3>{t('modeTitle')}</h3>
 		<div class="btn-row">
 			{#each composites as c (c.id)}
-				<button class="ghost" class:active={mode.kind === 'composite' && mode.id === c.id} onclick={() => (mode = { kind: 'composite', id: c.id })}>{c.name}</button>
+				<button class="ghost" class:active={mode.kind === 'composite' && mode.id === c.id} onclick={() => (mode = { kind: 'composite', id: c.id })}>{L(c.name)}</button>
 			{/each}
 		</div>
 		<div class="btn-row">
 			{#each indices as ix (ix.id)}
-				<button class="ghost" class:active={mode.kind === 'index' && mode.id === ix.id} onclick={() => (mode = { kind: 'index', id: ix.id })}>{ix.name}</button>
+				<button class="ghost" class:active={mode.kind === 'index' && mode.id === ix.id} onclick={() => (mode = { kind: 'index', id: ix.id })}>{L(ix.name)}</button>
 			{/each}
 		</div>
-		<p class="muted" style="font-size: 0.85rem">{modeDesc}</p>
+		<p class="muted" style="font-size: 0.85rem">{modeDescText}</p>
 		{#if mode.kind === 'composite' && composites.find((c) => c.id === mode.id)?.rescaleMax}
 			<div class="control">
-				<label for="gain">ゲイン（rescale 上限を 1/gain に）</label>
+				<label for="gain">{t('modeGain')}</label>
 				<output>×{gain.toFixed(1)}</output>
 				<input id="gain" type="range" min="0.5" max="3" step="0.1" bind:value={gain} />
 			</div>
 		{/if}
 		<div class="control">
-			<label for="op">不透明度</label>
+			<label for="op">{t('modeOpacity')}</label>
 			<output>{Math.round(opacity * 100)}%</output>
 			<input id="op" type="range" min="0" max="1" step="0.05" bind:value={opacity} />
 		</div>
 		<div class="grid cols-2" style="margin-top: 0.6rem">
-			<div class="stat"><span class="label">読んでいる COG</span><span class="value">{currentAssets.length}<span class="unit">ファイル</span></span></div>
-			<div class="stat"><span class="label">発行した Range Request</span><span class="value">{requests.toLocaleString()}</span></div>
+			<div class="stat"><span class="label">{t('modeCogLabel')}</span><span class="value">{currentAssets.length}<span class="unit">{t('modeCogUnit')}</span></span></div>
+			<div class="stat"><span class="label">{t('modeRequests')}</span><span class="value">{requests.toLocaleString()}</span></div>
 		</div>
 		<details>
-			<summary class="muted" style="cursor: pointer; font-size: 0.85rem">読んでいる COG の URL</summary>
-			<pre style="font-size: 0.72rem; white-space: pre-wrap; word-break: break-all"><code>{currentAssets.length ? currentAssets.map((c) => `${c.a.padEnd(7)} ${c.href}`).join('\n') : '（シーン未選択）'}</code></pre>
+			<summary class="muted" style="cursor: pointer; font-size: 0.85rem">{t('modeCogUrls')}</summary>
+			<pre style="font-size: 0.72rem; white-space: pre-wrap; word-break: break-all"><code>{currentAssets.length ? currentAssets.map((c) => `${c.a.padEnd(7)} ${c.href}`).join('\n') : t('modeNoScene')}</code></pre>
 		</details>
 	</div>
 
 	<div class="panel">
-		<h3>シーン検索 <span class="muted" style="font-weight: 400; font-size: 0.8rem">— 地図中心を含む Sentinel-2 L2A</span></h3>
+		<h3>{t('searchTitle')} <span class="muted" style="font-weight: 400; font-size: 0.8rem">{t('searchSub')}</span></h3>
 		<div class="control">
-			<label for="days">過去 N 日</label>
-			<output>{days} 日</output>
+			<label for="days">{t('searchDays')}</label>
+			<output>{t('searchDaysOut', days)}</output>
 			<input id="days" type="range" min="14" max="730" step="7" bind:value={days} />
 		</div>
 		<div class="control">
-			<label for="cc">雲量上限</label>
+			<label for="cc">{t('searchCloud')}</label>
 			<output>&lt; {maxCloud}%</output>
 			<input id="cc" type="range" min="0" max="100" step="5" bind:value={maxCloud} />
 		</div>
-		<button onclick={search} disabled={loading}>{loading ? '検索中…' : '現在の地図中心で再検索'}</button>
+		<button onclick={search} disabled={loading}>{loading ? t('searchBtnBusy') : t('searchBtn')}</button>
 		<p class="muted" style="font-size: 0.8rem; margin-top: 0.6rem">
-			{items.length} シーン。クリックで <strong>A</strong>（表示）、右の「B」で比較レイヤー（スワイプ）に設定。
+			{t('searchCount', items.length)}<strong>A</strong>{t('searchCountRest')}
 		</p>
 		<div class="strip">
 			{#each items as it (it.id)}
@@ -799,21 +801,21 @@
 
 <div class="grid cols-2">
 	<div class="panel">
-		<h3>衛星軌道 <span class="muted" style="font-weight: 400; font-size: 0.8rem">— 実 TLE から SGP4 で計算</span></h3>
+		<h3>{t('orbitTitle')} <span class="muted" style="font-weight: 400; font-size: 0.8rem">{t('orbitSub')}</span></h3>
 		{#if !tleSet}
-			<p class="muted" style="font-size: 0.9rem">TLE 取得中…</p>
+			<p class="muted" style="font-size: 0.9rem">{t('orbitTleLoading')}</p>
 		{:else}
 			<p class="muted" style="font-size: 0.78rem; margin: 0 0 0.5rem">
-				TLE: {tleSet.source === 'bundled' ? '同梱スナップショット（CelesTrak に届かず）' : `CelesTrak${tleSet.source === 'cache' ? '（キャッシュ）' : ''}`}
-				· 元期から {tleAgeH < 48 ? `${tleAgeH.toFixed(0)} 時間` : `${(tleAgeH / 24).toFixed(0)} 日`}
+				TLE: {tleSet.source === 'bundled' ? t('orbitTleBundled') : `CelesTrak${tleSet.source === 'cache' ? t('orbitTleCache') : ''}`}
+				· {tleAgeH < 48 ? t('orbitTleAgeH', tleAgeH.toFixed(0)) : t('orbitTleAgeD', (tleAgeH / 24).toFixed(0))}
 			</p>
 			<table style="font-size: 0.85rem">
-				<thead><tr><th>衛星</th><th class="num">緯度</th><th class="num">経度</th><th class="num">高度</th></tr></thead>
+				<thead><tr><th>{t('orbitThSat')}</th><th class="num">{t('orbitThLat')}</th><th class="num">{t('orbitThLon')}</th><th class="num">{t('orbitThAlt')}</th></tr></thead>
 				<tbody>
 					{#each SATS as s (s.id)}
 						{@const p = satNow[s.id]}
 						<tr>
-							<td><span class="swatch" style:background={s.color}></span>{s.name} <span class="muted" style="font-size: 0.75rem">{s.launched}〜</span></td>
+							<td><span class="swatch" style:background={s.color}></span>{s.name} <span class="muted" style="font-size: 0.75rem">{t('orbitLaunched', s.launched)}</span></td>
 							<td class="num">{p ? p.lat.toFixed(2) + '°' : '—'}</td>
 							<td class="num">{p ? p.lon.toFixed(2) + '°' : '—'}</td>
 							<td class="num">{p ? p.alt.toFixed(0) + ' km' : '—'}</td>
@@ -822,31 +824,30 @@
 				</tbody>
 			</table>
 			<p class="muted" style="font-size: 0.78rem">
-				位置は表示時刻（地図右上の時刻バー、既定は LIVE）のもの。地図の線は表示時刻の前後 50 分の軌道直下の軌跡で、塗りは撮影中の観測幅（幅 290 km）。
-				3 機とも高度約 790 km・傾斜角 98.6° の太陽同期軌道で、下降側（北→南）を地方時 10:30 頃に通り、そこだけ撮影します。地上速度は約 6.8 km/s——日本列島（約 2,000 km）を 5 分で縦断します。
+				{t('orbitNote')}
 			</p>
 		{/if}
 	</div>
 
 	<div class="panel">
 		<h3>
-			次にここが撮影されるのは
-			{#if passTarget}<span class="muted" style="font-weight: 400; font-size: 0.75rem; font-family: var(--mono)">（{passTarget.lat.toFixed(2)}, {passTarget.lon.toFixed(2)}）</span>{/if}
+			{t('passTitle')}
+			{#if passTarget}<span class="muted" style="font-weight: 400; font-size: 0.75rem; font-family: var(--mono)">({passTarget.lat.toFixed(2)}, {passTarget.lon.toFixed(2)})</span>{/if}
 		</h3>
 		{#if !tleSet}
-			<p class="muted" style="font-size: 0.9rem">TLE 取得中…</p>
+			<p class="muted" style="font-size: 0.9rem">{t('orbitTleLoading')}</p>
 		{:else if !imagingPasses.length}
-			<p class="muted" style="font-size: 0.9rem">今後 10 日間にこの地点を観測幅（±{HALF_SWATH_KM} km）に収める昼側パスがありません。</p>
+			<p class="muted" style="font-size: 0.9rem">{t('passNone', HALF_SWATH_KM)}</p>
 		{:else}
 			<table style="font-size: 0.85rem">
-				<thead><tr><th>日時 (JST)</th><th>衛星</th><th class="num">横ずれ</th><th class="num">太陽高度</th><th>10 日前</th></tr></thead>
+				<thead><tr><th>{t('passThTime')}</th><th>{t('passThSat')}</th><th class="num">{t('passThCross')}</th><th class="num">{t('passThSun')}</th><th>{t('passThPrev')}</th></tr></thead>
 				<tbody>
 					{#each imagingPasses as p (p.sat + p.time.getTime())}
 						{@const m = matchScene(p)}
-						<tr class="pass" class:sel={selectedPass === p} onclick={() => selectPass(p)} title="クリックで観測幅を地図に表示">
+						<tr class="pass" class:sel={selectedPass === p} onclick={() => selectPass(p)} title={t('passRowTitle')}>
 							<td style="font-family: var(--mono)">{fmtJst(p.time)}</td>
 							<td><span class="swatch" style:background={satMeta(p.sat).color}></span>{satMeta(p.sat).name.replace('Sentinel-', 'S')}</td>
-							<td class="num" title="直下点からの横方向距離。負 = 進行方向左（東）側">{p.crossTrackKm.toFixed(0)} km</td>
+							<td class="num" title={t('passCrossTitle')}>{p.crossTrackKm.toFixed(0)} km</td>
 							<td class="num">{p.sunElevation.toFixed(0)}°</td>
 							<td class="muted" style="font-size: 0.78rem">{m ? `✓ ${fmtDate(m.properties.datetime)} ${satLabel(m).split(' ')[1] ?? ''}` : ''}</td>
 						</tr>
@@ -854,9 +855,7 @@
 				</tbody>
 			</table>
 			<p class="muted" style="font-size: 0.78rem">
-				地図中心を観測幅に収める下降（昼側）パスを、地図を動かすごとに再計算。「10 日前」に ✓ があれば、同じ衛星が同じ相対軌道（R 番号）でちょうど 10 日前に撮ったシーンが検索結果にあります——
-				Sentinel-2 の 10 日回帰が実データで確かめられます。行をクリックすると、その時の観測幅（幅 290 km）を地図に描きます。
-				行をクリックすると表示時刻がその瞬間に飛びます。陸域は系統的に撮影されますが、実際にシーンが公開されるかは取得計画と処理状況によります。
+				{t('passNote')}
 			</p>
 		{/if}
 	</div>
@@ -864,13 +863,13 @@
 
 <div class="grid cols-2">
 	<div class="panel">
-		<h3>クリック地点の値 {#if pointLoading}<span class="muted" style="font-size: 0.8rem">取得中…</span>{/if}</h3>
+		<h3>{t('pointTitle')} {#if pointLoading}<span class="muted" style="font-size: 0.8rem">{t('pointLoading')}</span>{/if}</h3>
 		{#if !point}
-			<p class="muted" style="font-size: 0.9rem">地図をクリックしてください。</p>
+			<p class="muted" style="font-size: 0.9rem">{t('pointEmpty')}</p>
 		{:else}
 			<p class="muted" style="font-size: 0.8rem; font-family: var(--mono)">{point.lat.toFixed(5)}, {point.lon.toFixed(5)}</p>
 			<table>
-				<thead><tr><th>アセット</th><th class="num">A (DN)</th>{#if itemB}<th class="num">B (DN)</th>{/if}</tr></thead>
+				<thead><tr><th>{t('pointThAsset')}</th><th class="num">A (DN)</th>{#if itemB}<th class="num">B (DN)</th>{/if}</tr></thead>
 				<tbody>
 					{#each pointAssets as a (a)}
 						<tr><td><code>{a}</code></td><td class="num">{pointA?.[a] ?? '—'}</td>{#if itemB}<td class="num">{pointB?.[a] ?? '—'}</td>{/if}</tr>
@@ -878,7 +877,7 @@
 				</tbody>
 			</table>
 			<table style="margin-top: 0.6rem">
-				<thead><tr><th>指標</th><th class="num">A</th>{#if itemB}<th class="num">B</th><th class="num">B − A</th>{/if}</tr></thead>
+				<thead><tr><th>{t('pointThIndex')}</th><th class="num">A</th>{#if itemB}<th class="num">B</th><th class="num">B − A</th>{/if}</tr></thead>
 				<tbody>
 					{#each indices as ix (ix.id)}
 						{@const va = indexAt(pointA, ix)}
@@ -894,20 +893,20 @@
 					{/each}
 				</tbody>
 			</table>
-			<p class="muted" style="font-size: 0.78rem">DN は反射率 × 10000（Earth Search はオフセット補正済み）。10 m と 20 m のバンドが混在するため、境界部では画素の代表範囲が異なる点に注意。</p>
+			<p class="muted" style="font-size: 0.78rem">{t('pointNote')}</p>
 		{/if}
 	</div>
 
 	<div class="panel">
-		<h3>クリック地点の時系列</h3>
+		<h3>{t('seriesTitle')}</h3>
 		<div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap">
 			<select bind:value={seriesIndex}>
-				{#each indices as ix (ix.id)}<option value={ix.id}>{ix.name}</option>{/each}
+				{#each indices as ix (ix.id)}<option value={ix.id}>{L(ix.name)}</option>{/each}
 			</select>
-			<button onclick={buildSeries} disabled={!point || seriesLoading || !items.length}>{seriesLoading ? '計算中…' : `${Math.min(20, items.length)} シーンで計算`}</button>
+			<button onclick={buildSeries} disabled={!point || seriesLoading || !items.length}>{seriesLoading ? t('seriesBusy') : t('seriesBtn', Math.min(20, items.length))}</button>
 		</div>
 		{#if series.length}
-			<svg viewBox="0 0 800 180" width="100%" style="margin-top: 0.6rem" aria-label="時系列">
+			<svg viewBox="0 0 800 180" width="100%" style="margin-top: 0.6rem" aria-label={t('seriesAria')}>
 				{#each [-1, -0.5, 0, 0.5, 1] as t (t)}
 					<line x1={CX0} y1={sy(t)} x2={CX1} y2={sy(t)} stroke="#1c2950" />
 					<text x={CX0 - 6} y={sy(t) + 4} fill="#98a6cc" font-size="10" text-anchor="end">{t}</text>
@@ -919,7 +918,7 @@
 				{#each series as s, i (s.item.id)}
 					{#if s.v !== null}
 						<circle cx={sx(i, series.length)} cy={sy(s.v)} r="4" fill={cloud(s.item)! > 20 ? '#ffb86c' : '#50fa7b'}>
-							<title>{fmtDate(s.item.properties.datetime)}: {s.v.toFixed(3)} (雲 {cloud(s.item)?.toFixed(0)}%)</title>
+							<title>{t('seriesPointTitle', fmtDate(s.item.properties.datetime), s.v.toFixed(3), cloud(s.item)?.toFixed(0))}</title>
 						</circle>
 					{/if}
 					{#if i % Math.ceil(series.length / 6) === 0 || i === series.length - 1}
@@ -927,101 +926,96 @@
 					{/if}
 				{/each}
 			</svg>
-			<p class="muted" style="font-size: 0.78rem">橙の点はシーン全体の雲量 &gt; 20%。地点が雲に覆われていると値が急落するので、実務では SCL バンドで雲画素を除外してから合成します。</p>
+			<p class="muted" style="font-size: 0.78rem">{@html t('seriesNote')}</p>
 		{:else}
-			<p class="muted" style="font-size: 0.9rem">地点をクリック → 指標を選んで「計算」。検索結果の各シーンの COG から、該当 1 画素を含む内部タイルだけを並列で読みます。</p>
+			<p class="muted" style="font-size: 0.9rem">{t('seriesEmpty')}</p>
 		{/if}
 	</div>
 </div>
 
 {#if itemA}
 	<div class="panel">
-		<h3>シーン A の取得メタデータ <span class="muted" style="font-weight: 400; font-size: 0.8rem">— STAC properties から</span></h3>
+		<h3>{t('metaTitle')} <span class="muted" style="font-weight: 400; font-size: 0.8rem">{t('metaSub')}</span></h3>
 		<div class="grid cols-3">
-			<div class="stat"><span class="label">衛星 / 相対軌道</span><span class="value" style="font-size: 1.1rem">{satLabel(itemA)}</span></div>
-			<div class="stat"><span class="label">撮影時刻 (JST)</span><span class="value" style="font-size: 1.1rem">{fmtJst(new Date(itemA.properties.datetime))}</span></div>
-			<div class="stat"><span class="label">MGRS タイル</span><span class="value" style="font-size: 1.1rem">{String(itemA.properties['grid:code'] ?? '').replace('MGRS-', '')}</span></div>
-			<div class="stat"><span class="label">太陽方位 / 高度</span><span class="value" style="font-size: 1.1rem">{fmt(sunAz, 1)}° / {fmt(sunEl, 1)}°</span></div>
-			<div class="stat"><span class="label">視線方位 / 入射角</span><span class="value" style="font-size: 1.1rem">{fmt(num(itemA.properties['view:azimuth']), 1)}° / {fmt(num(itemA.properties['view:incidence_angle']), 1)}°</span></div>
-			<div class="stat"><span class="label">軌道</span><span class="value" style="font-size: 1.1rem">{String(itemA.properties['sat:orbit_state'] ?? 'descending')}</span></div>
+			<div class="stat"><span class="label">{t('metaSat')}</span><span class="value" style="font-size: 1.1rem">{satLabel(itemA)}</span></div>
+			<div class="stat"><span class="label">{t('metaTime')}</span><span class="value" style="font-size: 1.1rem">{fmtJst(new Date(itemA.properties.datetime))}</span></div>
+			<div class="stat"><span class="label">{t('metaMgrs')}</span><span class="value" style="font-size: 1.1rem">{String(itemA.properties['grid:code'] ?? '').replace('MGRS-', '')}</span></div>
+			<div class="stat"><span class="label">{t('metaSun')}</span><span class="value" style="font-size: 1.1rem">{fmt(sunAz, 1)}° / {fmt(sunEl, 1)}°</span></div>
+			<div class="stat"><span class="label">{t('metaView')}</span><span class="value" style="font-size: 1.1rem">{fmt(num(itemA.properties['view:azimuth']), 1)}° / {fmt(num(itemA.properties['view:incidence_angle']), 1)}°</span></div>
+			<div class="stat"><span class="label">{t('metaOrbit')}</span><span class="value" style="font-size: 1.1rem">{String(itemA.properties['sat:orbit_state'] ?? 'descending')}</span></div>
 		</div>
 		<p class="muted" style="font-size: 0.8rem">
-			太陽方位はコンパスの ☀。雲の影はその反対方向（{sunAz !== null ? `${Math.round((sunAz + 180) % 360)}°` : '—'}）に落ちるので、NDVI で赤く出た塊が影か水かの判断に使えます。
-			入射角が小さいのは MSI がほぼ直下視だから。軌跡の真下から東西に離れたタイルほど入射角が大きく（観測幅の端で約 12°）、視線方位は衛星のいる側を向きます。
-			「相対軌道 R###」は 10 日周期で繰り返す 143 本の軌跡の番号で、同じ R 番号のシーン同士は同じ角度で撮られています。
+			{t('metaNote1', sunAz !== null ? `${Math.round((sunAz + 180) % 360)}°` : '—')}
+			{t('metaNote2')}
 		</p>
 	</div>
 {/if}
-<h2>解説：実画像の読み方</h2>
+<h2>{t('explainH2')}</h2>
 <div class="grid cols-2">
 	<div class="panel">
-		<h3>NDVI の値と地物（東京 2026-08-24 の実測）</h3>
+		<h3>{t('explainNdviTitle')}</h3>
 		<table>
-			<thead><tr><th>地点</th><th class="num">NIR (B8)</th><th class="num">Red (B4)</th><th class="num">NDVI</th></tr></thead>
+			<thead><tr><th>{t('explainThSite')}</th><th class="num">NIR (B8)</th><th class="num">Red (B4)</th><th class="num">NDVI</th></tr></thead>
 			<tbody>
-				<tr><td>皇居の森</td><td class="num">2465</td><td class="num">323</td><td class="num" style="color: var(--green)">+0.77</td></tr>
-				<tr><td>市街地（住宅・道路）</td><td class="num">1500</td><td class="num">1296</td><td class="num">+0.07</td></tr>
+				<tr><td>{t('explainSiteForest')}</td><td class="num">2465</td><td class="num">323</td><td class="num" style="color: var(--green)">+0.77</td></tr>
+				<tr><td>{t('explainSiteUrban')}</td><td class="num">1500</td><td class="num">1296</td><td class="num">+0.07</td></tr>
 			</tbody>
 		</table>
 		<p style="font-size: 0.9rem">
-			DN は反射率 × 10000。森は赤をわずか 3% しか返さず NIR を 25% 返す——この段差（レッドエッジ）は葉の細胞構造とクロロフィルに由来し、植生にしかありません。
-			<code>(NIR − Red) / (NIR + Red)</code> と<strong>和で割る</strong>ことで太陽高度や斜面向きによる明るさの差が打ち消され、日付・場所をまたいで比較できる値になります。
+			{t('explainNdviText1')}
+			{@html t('explainNdviText2')}
 		</p>
 		<table style="font-size: 0.85rem">
-			<thead><tr><th>NDVI</th><th>典型的な地物</th></tr></thead>
+			<thead><tr><th>NDVI</th><th>{t('explainThTypical')}</th></tr></thead>
 			<tbody>
-				<tr><td class="num" style="color: var(--red)">&lt; 0</td><td>水、雪、雲の影</td></tr>
-				<tr><td class="num">0〜0.2</td><td>裸地、都市、岩、<strong>雲</strong>（NIR も Red も高いため 0 付近）</td></tr>
-				<tr><td class="num">0.2〜0.5</td><td>草地、疎な植生、生育初期の作物</td></tr>
-				<tr><td class="num" style="color: var(--green)">&gt; 0.6</td><td>森林、成熟した作物（0.8〜0.9 で飽和し密度差は見えなくなる）</td></tr>
+				<tr><td class="num" style="color: var(--red)">&lt; 0</td><td>{t('explainRange1')}</td></tr>
+				<tr><td class="num">0〜0.2</td><td>{@html t('explainRange2')}</td></tr>
+				<tr><td class="num">0.2〜0.5</td><td>{t('explainRange3')}</td></tr>
+				<tr><td class="num" style="color: var(--green)">&gt; 0.6</td><td>{t('explainRange4')}</td></tr>
 			</tbody>
 		</table>
 	</div>
 	<div class="panel">
-		<h3>NDVI 画像で気をつけること</h3>
+		<h3>{t('explainCaveatsTitle')}</h3>
 		<ul style="font-size: 0.9rem; padding-left: 1.2rem; margin: 0.3rem 0">
-			<li><strong>雲は市街地と同じ黄色</strong>に見える。NDVI だけでは区別できないので、実務では SCL（シーン分類）バンドで雲・影の画素を除外してから使う。</li>
-			<li><strong>雲の影は水と同じ赤</strong>に見える。トゥルーカラーで雲の位置を確認し、その南〜東側（太陽の反対）の赤い塊は影と読む。</li>
-			<li><strong>ミクセル</strong>：10 m 画素に街路樹と道路が混ざると 0.2〜0.3 の中間値が出る。都市の緑被率を見るなら閾値ではなく連続値で扱う。</li>
-			<li><strong>季節性</strong>：水田は田植え直後に負（水面）→ 夏に 0.8 → 収穫で急落。1 枚の値ではなく時系列の形で作物を判別する。</li>
-			<li><strong>飽和</strong>：密な森林は NDVI 0.85 あたりで頭打ち。バイオマスの差を見るなら EVI や NDRE（レッドエッジ B5/B6）を使う。</li>
+			<li>{@html t('explainCaveat1')}</li>
+			<li>{@html t('explainCaveat2')}</li>
+			<li>{@html t('explainCaveat3')}</li>
+			<li>{@html t('explainCaveat4')}</li>
+			<li>{@html t('explainCaveat5')}</li>
 		</ul>
 	</div>
 </div>
 
 <div class="grid cols-2">
 	<div class="panel">
-		<h3>合成モードの使い分け</h3>
+		<h3>{t('explainCompTitle')}</h3>
 		<table style="font-size: 0.85rem">
 			<tbody>
-				<tr><td><strong>トゥルーカラー</strong></td><td>まず地形・雲を把握する。植生は暗い緑で差が見づらい。</td></tr>
-				<tr><td><strong>フォールスカラー</strong></td><td>植生の活性を「赤の濃さ」で見る。水は黒く、境界が明瞭。</td></tr>
-				<tr><td><strong>SWIR 合成</strong></td><td>雲（白）と雪（青）を分ける。焼失跡・裸地が赤紫。</td></tr>
-				<tr><td><strong>農業</strong></td><td>作物の生育差が緑の濃淡に。畝や区画ごとの違いを見る。</td></tr>
-				<tr><td><strong>都市</strong></td><td>建物・舗装が明るく、植生が暗い。都市域の抽出に。</td></tr>
+				<tr><td><strong>{t('explainCompTci')}</strong></td><td>{t('explainCompTciDesc')}</td></tr>
+				<tr><td><strong>{t('explainCompFc')}</strong></td><td>{t('explainCompFcDesc')}</td></tr>
+				<tr><td><strong>{t('explainCompSwir')}</strong></td><td>{t('explainCompSwirDesc')}</td></tr>
+				<tr><td><strong>{t('explainCompAgri')}</strong></td><td>{t('explainCompAgriDesc')}</td></tr>
+				<tr><td><strong>{t('explainCompUrban')}</strong></td><td>{t('explainCompUrbanDesc')}</td></tr>
 			</tbody>
 		</table>
 	</div>
 	<div class="panel">
-		<h3>2 時期比較と時系列の使い道</h3>
+		<h3>{t('explainUseTitle')}</h3>
 		<ul style="font-size: 0.9rem; padding-left: 1.2rem; margin: 0.3rem 0">
-			<li><strong>災害</strong>：洪水前後の NDWI、山火事前後の NBR（差分 dNBR で被害度）。</li>
-			<li><strong>農業</strong>：田植え〜収穫の NDVI 波形で作付け作物を推定。区画ごとの生育ムラ。</li>
-			<li><strong>都市開発</strong>：数年離れた 2 シーンの NDBI／NDVI 差で造成地を抽出。</li>
-			<li><strong>雪・水資源</strong>：NDSI の時系列で融雪時期、NDWI で湖面の季節変動。</li>
+			<li>{@html t('explainUse1')}</li>
+			<li>{@html t('explainUse2')}</li>
+			<li>{@html t('explainUse3')}</li>
+			<li>{@html t('explainUse4')}</li>
 		</ul>
 		<p class="muted" style="font-size: 0.85rem">
-			時系列チャートの橙の点はシーン全体の雲量が 20% 超。値が突然落ちていたら、その地点が雲か影に覆われている可能性が高い。
+			{t('explainUseNote')}
 		</p>
 	</div>
 </div>
 
 <div class="note">
-	<strong>ここで起きていること：</strong> ① ブラウザが Earth Search（STAC）でシーンを検索 → ② 選んだ Item の assets から COG の URL を取得 →
-	③ <code>geotiff.js</code> が COG のヘッダ（IFD）を読み、表示ズームに合うオーバービューを選ぶ → ④ 地図タイルごとに、必要な UTM 範囲の内部タイルだけを Range Request で取得 →
-	⑤ 各画素を経緯度 → UTM に投影して最近傍サンプリング、合成／指標計算して Canvas に描く。
-	サーバーもダウンロードも無し。05 で見た COG のタイル構造が、そのままブラウザ上の地図の速さに繋がっています。
-	開発者ツールの Network タブで <code>sentinel-cogs.s3</code> へのリクエストを見ると、<code>Range: bytes=…</code> ヘッダと <code>206 Partial Content</code> が確認できます。
+	<strong>{t('noteTitle')}</strong> {@html t('noteBody')}
 </div>
 
 <style>

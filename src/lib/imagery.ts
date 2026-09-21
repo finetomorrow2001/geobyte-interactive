@@ -1,4 +1,5 @@
 import type { Job, TileJob, PointJob } from './cog.worker';
+import type { LText } from './i18n/lang.svelte';
 
 export const STAC_API = 'https://earth-search.aws.element84.com/v1';
 export const COLLECTION = 'sentinel-2-l2a';
@@ -15,51 +16,128 @@ export const itemUrl = (id: string) => `${STAC_API}/collections/${COLLECTION}/it
 
 export type Composite = {
 	id: string;
-	name: string;
+	name: LText;
 	assets: string[];
 	/** DN の表示レンジ上限（0..max を 0..255 に）。visual は 8bit なので不要 */
 	rescaleMax?: number;
-	desc: string;
+	desc: LText;
 };
 
 /** Earth Search sentinel-2-l2a のアセット名でのバンド合成 */
 export const composites: Composite[] = [
-	{ id: 'tci', name: 'トゥルーカラー (TCI)', assets: ['visual'], desc: 'ESA が生成した 8bit の真色画像。1 ファイル 3 バンドなので最も速い。' },
-	{ id: 'rgb', name: 'トゥルーカラー (自前)', assets: ['red', 'green', 'blue'], rescaleMax: 3000, desc: 'B4/B3/B2 を自分でストレッチ。ゲインを変えて暗部を持ち上げられる。' },
-	{ id: 'fc', name: 'フォールスカラー (NIR)', assets: ['nir', 'red', 'green'], rescaleMax: 4000, desc: 'B8/B4/B3。植生が赤く、水が黒く出る。' },
-	{ id: 'swir', name: 'SWIR 合成', assets: ['swir22', 'nir08', 'red'], rescaleMax: 4000, desc: 'B12/B8A/B4。焼失跡・裸地が赤紫、植生が緑。雲は白、雪は青。' },
-	{ id: 'agri', name: '農業', assets: ['swir16', 'nir', 'blue'], rescaleMax: 4000, desc: 'B11/B8/B2。作物の活性が鮮やかな緑。' },
-	{ id: 'urban', name: '都市', assets: ['swir22', 'swir16', 'red'], rescaleMax: 4000, desc: 'B12/B11/B4。建物・裸地が明るく、植生は暗い緑。' }
+	{
+		id: 'tci',
+		name: { ja: 'トゥルーカラー (TCI)', en: 'True color (TCI)' },
+		assets: ['visual'],
+		desc: { ja: 'ESA が生成した 8bit の真色画像。1 ファイル 3 バンドなので最も速い。', en: '8-bit true-color image produced by ESA. Three bands in one file, so it is the fastest.' }
+	},
+	{
+		id: 'rgb',
+		name: { ja: 'トゥルーカラー (自前)', en: 'True color (custom)' },
+		assets: ['red', 'green', 'blue'],
+		rescaleMax: 3000,
+		desc: { ja: 'B4/B3/B2 を自分でストレッチ。ゲインを変えて暗部を持ち上げられる。', en: 'B4/B3/B2 stretched by us. Change the gain to lift the shadows.' }
+	},
+	{
+		id: 'fc',
+		name: { ja: 'フォールスカラー (NIR)', en: 'False color (NIR)' },
+		assets: ['nir', 'red', 'green'],
+		rescaleMax: 4000,
+		desc: { ja: 'B8/B4/B3。植生が赤く、水が黒く出る。', en: 'B8/B4/B3. Vegetation appears red, water black.' }
+	},
+	{
+		id: 'swir',
+		name: { ja: 'SWIR 合成', en: 'SWIR composite' },
+		assets: ['swir22', 'nir08', 'red'],
+		rescaleMax: 4000,
+		desc: { ja: 'B12/B8A/B4。焼失跡・裸地が赤紫、植生が緑。雲は白、雪は青。', en: 'B12/B8A/B4. Burn scars and bare soil magenta, vegetation green. Clouds white, snow blue.' }
+	},
+	{
+		id: 'agri',
+		name: { ja: '農業', en: 'Agriculture' },
+		assets: ['swir16', 'nir', 'blue'],
+		rescaleMax: 4000,
+		desc: { ja: 'B11/B8/B2。作物の活性が鮮やかな緑。', en: 'B11/B8/B2. Crop vigour shows as vivid green.' }
+	},
+	{
+		id: 'urban',
+		name: { ja: '都市', en: 'Urban' },
+		assets: ['swir22', 'swir16', 'red'],
+		rescaleMax: 4000,
+		desc: { ja: 'B12/B11/B4。建物・裸地が明るく、植生は暗い緑。', en: 'B12/B11/B4. Buildings and bare soil bright, vegetation dark green.' }
+	}
 ];
 
 export type IndexDef = {
 	id: string;
-	name: string;
+	name: LText;
 	/** (b1 - b2) / (b1 + b2) */
 	b1: string;
 	b2: string;
 	colormap: string;
-	desc: string;
+	desc: LText;
 };
 
 export const indices: IndexDef[] = [
-	{ id: 'ndvi', name: 'NDVI 植生', b1: 'nir', b2: 'red', colormap: 'rdylgn', desc: '緑 = 密な植生、黄 = 裸地・都市・雲、赤 = 水・雲影。' },
-	{ id: 'ndwi', name: 'NDWI 水域', b1: 'green', b2: 'nir', colormap: 'blues', desc: '濃い青 = 水。0 以上を水域とみなすのが目安。' },
-	{ id: 'ndmi', name: 'NDMI 植生水分', b1: 'nir08', b2: 'swir16', colormap: 'brbg', desc: '青緑 = 水分が多い植生、茶 = 乾燥。' },
-	{ id: 'nbr', name: 'NBR 焼失', b1: 'nir', b2: 'swir22', colormap: 'rdylgn', desc: '火災前後で差分 (dNBR) を取ると被害域が出る。' },
-	{ id: 'ndsi', name: 'NDSI 雪', b1: 'green', b2: 'swir16', colormap: 'blues', desc: '0.4 以上で雪。雲は SWIR でも明るいので分離できる。' },
-	{ id: 'ndbi', name: 'NDBI 都市', b1: 'swir16', b2: 'nir', colormap: 'magma', desc: '明るい = 建物・裸地。NDVI とほぼ逆符号。' }
+	{
+		id: 'ndvi',
+		name: { ja: 'NDVI 植生', en: 'NDVI vegetation' },
+		b1: 'nir',
+		b2: 'red',
+		colormap: 'rdylgn',
+		desc: { ja: '緑 = 密な植生、黄 = 裸地・都市・雲、赤 = 水・雲影。', en: 'Green = dense vegetation, yellow = bare soil / urban / cloud, red = water / cloud shadow.' }
+	},
+	{
+		id: 'ndwi',
+		name: { ja: 'NDWI 水域', en: 'NDWI water' },
+		b1: 'green',
+		b2: 'nir',
+		colormap: 'blues',
+		desc: { ja: '濃い青 = 水。0 以上を水域とみなすのが目安。', en: 'Dark blue = water. Values above 0 are a rule-of-thumb water mask.' }
+	},
+	{
+		id: 'ndmi',
+		name: { ja: 'NDMI 植生水分', en: 'NDMI moisture' },
+		b1: 'nir08',
+		b2: 'swir16',
+		colormap: 'brbg',
+		desc: { ja: '青緑 = 水分が多い植生、茶 = 乾燥。', en: 'Teal = moist vegetation, brown = dry.' }
+	},
+	{
+		id: 'nbr',
+		name: { ja: 'NBR 焼失', en: 'NBR burn' },
+		b1: 'nir',
+		b2: 'swir22',
+		colormap: 'rdylgn',
+		desc: { ja: '火災前後で差分 (dNBR) を取ると被害域が出る。', en: 'Difference the pre- and post-fire scenes (dNBR) to map the burned area.' }
+	},
+	{
+		id: 'ndsi',
+		name: { ja: 'NDSI 雪', en: 'NDSI snow' },
+		b1: 'green',
+		b2: 'swir16',
+		colormap: 'blues',
+		desc: { ja: '0.4 以上で雪。雲は SWIR でも明るいので分離できる。', en: 'Above 0.4 is snow. Clouds stay bright in SWIR, so they separate.' }
+	},
+	{
+		id: 'ndbi',
+		name: { ja: 'NDBI 都市', en: 'NDBI built-up' },
+		b1: 'swir16',
+		b2: 'nir',
+		colormap: 'magma',
+		desc: { ja: '明るい = 建物・裸地。NDVI とほぼ逆符号。', en: 'Bright = buildings / bare soil. Roughly the opposite sign of NDVI.' }
+	}
 ];
 
-export type Place = { name: string; center: [number, number]; zoom: number; hint: string };
+export type Place = { id: string; name: LText; center: [number, number]; zoom: number; hint: LText };
 
 export const places: Place[] = [
-	{ name: '東京', center: [35.68, 139.75], zoom: 11, hint: '都市 vs 皇居・多摩の緑' },
-	{ name: '富士山', center: [35.36, 138.73], zoom: 11, hint: '雪と雲を NDSI / SWIR で見分ける' },
-	{ name: '琵琶湖', center: [35.25, 136.05], zoom: 10, hint: 'NDWI で水域抽出' },
-	{ name: '十勝平野', center: [42.9, 143.2], zoom: 10, hint: '農地のパターン、季節変化' },
-	{ name: '阿蘇', center: [32.88, 131.1], zoom: 11, hint: 'カルデラの草原・火山地形' },
-	{ name: '石垣島', center: [24.4, 124.2], zoom: 11, hint: 'サンゴ礁・浅海の色' }
+	{ id: 'tokyo', name: { ja: '東京', en: 'Tokyo' }, center: [35.68, 139.75], zoom: 11, hint: { ja: '都市 vs 皇居・多摩の緑', en: 'City vs. the greenery of the Imperial Palace and Tama' } },
+	{ id: 'fuji', name: { ja: '富士山', en: 'Mt. Fuji' }, center: [35.36, 138.73], zoom: 11, hint: { ja: '雪と雲を NDSI / SWIR で見分ける', en: 'Separate snow from cloud with NDSI / SWIR' } },
+	{ id: 'biwa', name: { ja: '琵琶湖', en: 'Lake Biwa' }, center: [35.25, 136.05], zoom: 10, hint: { ja: 'NDWI で水域抽出', en: 'Extract water with NDWI' } },
+	{ id: 'tokachi', name: { ja: '十勝平野', en: 'Tokachi Plain' }, center: [42.9, 143.2], zoom: 10, hint: { ja: '農地のパターン、季節変化', en: 'Field patterns and seasonal change' } },
+	{ id: 'aso', name: { ja: '阿蘇', en: 'Aso' }, center: [32.88, 131.1], zoom: 11, hint: { ja: 'カルデラの草原・火山地形', en: 'Caldera grassland and volcanic terrain' } },
+	{ id: 'ishigaki', name: { ja: '石垣島', en: 'Ishigaki Island' }, center: [24.4, 124.2], zoom: 11, hint: { ja: 'サンゴ礁・浅海の色', en: 'Coral reefs and shallow-water colour' } }
 ];
 
 export type RenderMode = { kind: 'composite'; id: string } | { kind: 'index'; id: string };

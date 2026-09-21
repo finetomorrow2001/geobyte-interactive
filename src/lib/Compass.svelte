@@ -3,6 +3,10 @@
 	 * 地図の向きに追従するコンパス。クリックで北を上に戻す。
 	 * 撮影時の太陽方位（☀）と衛星の進行方向（▲）も同じ盤面に重ねる。
 	 */
+	import { makeT } from '$lib/i18n/lang.svelte';
+	import { imagery as dict } from '$lib/i18n/imagery';
+
+	const t = makeT(dict);
 	let {
 		bearing = 0,
 		pitch = 0,
@@ -29,17 +33,17 @@
 	const fmtDeg = (d: number) => `${Math.round(((d % 360) + 360) % 360)}°`;
 	const title = $derived(
 		[
-			`地図の向き ${fmtDeg(bearing)}（クリックで北を上に）`,
-			pitch > 0.5 ? `傾き ${Math.round(pitch)}°` : null,
-			sunAzimuth !== null ? `☀ 撮影時の太陽方位 ${fmtDeg(sunAzimuth)}${sunElevation !== null ? ` 高度 ${Math.round(sunElevation)}°` : ''}` : null,
-			trackHeading !== null ? `▲ 衛星の進行方向 ${fmtDeg(trackHeading)}` : null
+			t('compassBearing', fmtDeg(bearing)),
+			pitch > 0.5 ? t('compassPitch', Math.round(pitch)) : null,
+			sunAzimuth !== null ? `${t('compassSun', fmtDeg(sunAzimuth))}${sunElevation !== null ? t('compassSunEl', Math.round(sunElevation)) : ''}` : null,
+			trackHeading !== null ? t('compassTrack', fmtDeg(trackHeading)) : null
 		]
 			.filter(Boolean)
 			.join('\n')
 	);
 </script>
 
-<button class="compass" onclick={onreset} {title} aria-label="コンパス。クリックで北を上に">
+<button class="compass" onclick={onreset} {title} aria-label={t('compassAria')}>
 	<svg viewBox="0 0 100 100" width="92" height="92">
 		<circle cx="50" cy="50" r="48" class="face" />
 		<g style:transform="rotate({-bearing}deg)" style:transform-origin="50px 50px">

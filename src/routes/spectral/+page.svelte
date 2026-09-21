@@ -12,6 +12,10 @@
 		composites,
 		type SceneBand
 	} from '$lib/spectral';
+	import { makeT, L } from '$lib/i18n/lang.svelte';
+	import { spectral } from '$lib/i18n/spectral';
+
+	const t = makeT(spectral);
 
 	// ---- スペクトル曲線 ----
 	let visible = $state<Record<string, boolean>>(Object.fromEntries(landCovers.map((c) => [c.id, true])));
@@ -71,20 +75,17 @@
 </script>
 
 <svelte:head>
-	<title>スペクトルと指標 — Satellite Data Lab</title>
+	<title>{t('title')}</title>
 </svelte:head>
 
-<h1>02 スペクトルと指標</h1>
-<p class="muted">
-	光学衛星は「波長ごとの反射率」を測っています。地物によってスペクトルの形が違うので、
-	うまくバンドを組み合わせれば植生・水・焼失跡などを 1 本の数値で切り出せます。
-</p>
+<h1>{t('h1')}</h1>
+<p class="muted">{t('lead')}</p>
 
-<h2>Sentinel-2 MSI のバンド</h2>
+<h2>{t('bandsH2')}</h2>
 <div class="panel tight" style="overflow-x: auto">
 	<table>
 		<thead>
-			<tr><th>バンド</th><th>名称</th><th class="num">中心 [nm]</th><th class="num">幅 [nm]</th><th class="num">分解能 [m]</th><th>主な用途</th></tr>
+			<tr><th>{t('bandsThBand')}</th><th>{t('bandsThName')}</th><th class="num">{t('bandsThCenter')}</th><th class="num">{t('bandsThWidth')}</th><th class="num">{t('bandsThRes')}</th><th>{t('bandsThUse')}</th></tr>
 		</thead>
 		<tbody>
 			{#each bands as b (b.id)}
@@ -94,26 +95,24 @@
 					<td class="num">{b.center}</td>
 					<td class="num">{b.width}</td>
 					<td class="num">{b.res}</td>
-					<td class="muted">{b.use}</td>
+					<td class="muted">{L(b.use)}</td>
 				</tr>
 			{/each}
 		</tbody>
 	</table>
-	<p class="muted" style="font-size: 0.8rem">
-		薄い行は大気補正用で、L2A 製品の解析では通常使いません。分解能が 10/20/60 m と混在している点に注意（解析時にリサンプリングが必要）。
-	</p>
+	<p class="muted" style="font-size: 0.8rem">{t('bandsNote')}</p>
 </div>
 
-<h2>地物ごとの反射スペクトル</h2>
+<h2>{t('specH2')}</h2>
 <div class="panel">
 	<div class="btn-row">
 		{#each landCovers as c (c.id)}
 			<button class="ghost" class:active={visible[c.id]} onclick={() => (visible[c.id] = !visible[c.id])}>
-				<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{c.color};margin-right:6px"></span>{c.name}
+				<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{c.color};margin-right:6px"></span>{L(c.name)}
 			</button>
 		{/each}
 	</div>
-	<svg viewBox="0 0 800 300" width="100%" aria-label="反射スペクトル">
+	<svg viewBox="0 0 800 300" width="100%" aria-label={t('specAria')}>
 		<!-- バンド帯 -->
 		{#each plotBands as b (b.id)}
 			<rect x={wl2x(b.center - b.width / 2)} y={Y0} width={Math.max(2, wl2x(b.center + b.width / 2) - wl2x(b.center - b.width / 2))} height={Y1 - Y0} fill="rgba(90,169,255,0.10)" />
@@ -143,16 +142,14 @@
 				{/each}
 			{/if}
 		{/each}
-		<text x={X1} y={Y0 - 6} fill="#98a6cc" font-size="10" text-anchor="end">縦軸: 地表反射率</text>
+		<text x={X1} y={Y0 - 6} fill="#98a6cc" font-size="10" text-anchor="end">{t('specYAxis')}</text>
 	</svg>
 	<div class="note">
-		<strong>読み方：</strong> 健全な植生は赤（B4）で吸収し NIR（B8）で急上昇する「レッドエッジ」を持つ。
-		水は NIR 以降ほぼゼロ。雪は可視で極めて明るく SWIR で暗い。焼失跡は NIR が落ちて SWIR2 が上がる。
-		指標はこの「差」を取り出す仕組みです。
+		<strong>{t('specNoteStrong')}</strong> {t('specNote')}
 	</div>
 </div>
 
-<h2>正規化差分指標を自分で組む</h2>
+<h2>{t('idxH2')}</h2>
 <div class="grid cols-2">
 	<div class="panel">
 		<p style="font-family: var(--mono); font-size: 1.1rem; text-align: center; margin: 0.5rem 0 1rem">
@@ -168,18 +165,18 @@
 			{/each}
 		</div>
 		{#if matchedIndex}
-			<p style="margin-top: 0.8rem"><strong style="color: var(--accent-2)">{matchedIndex.name}</strong><br /><span class="muted" style="font-size: 0.9rem">{matchedIndex.desc}</span></p>
+			<p style="margin-top: 0.8rem"><strong style="color: var(--accent-2)">{L(matchedIndex.name)}</strong><br /><span class="muted" style="font-size: 0.9rem">{L(matchedIndex.desc)}</span></p>
 		{:else}
-			<p class="muted" style="margin-top: 0.8rem; font-size: 0.9rem">名前のない組み合わせです。下の表で、どの地物を分離できそうか確認してみてください。</p>
+			<p class="muted" style="margin-top: 0.8rem; font-size: 0.9rem">{t('idxUnnamed')}</p>
 		{/if}
 	</div>
 	<div class="panel tight">
 		<table>
-			<thead><tr><th>地物</th><th class="num">{bandA}</th><th class="num">{bandB}</th><th class="num">指標値</th><th></th></tr></thead>
+			<thead><tr><th>{t('idxThCover')}</th><th class="num">{bandA}</th><th class="num">{bandB}</th><th class="num">{t('idxThValue')}</th><th></th></tr></thead>
 			<tbody>
 				{#each indexValues as { c, v } (c.id)}
 					<tr>
-						<td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{c.color};margin-right:6px"></span>{c.name}</td>
+						<td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{c.color};margin-right:6px"></span>{L(c.name)}</td>
 						<td class="num">{c.refl[bandA].toFixed(3)}</td>
 						<td class="num">{c.refl[bandB].toFixed(3)}</td>
 						<td class="num" style:color={v > 0.2 ? 'var(--green)' : v < -0.2 ? 'var(--red)' : 'var(--text)'}>{v >= 0 ? '+' : ''}{v.toFixed(2)}</td>
@@ -196,23 +193,21 @@
 	</div>
 </div>
 
-<h2>合成シーンでバンド合成・指標を見る</h2>
+<h2>{t('sceneH2')}</h2>
 <div class="grid cols-2">
 	<div class="panel">
 		<canvas bind:this={canvas} width={SIZE} height={SIZE} style="width: 100%; aspect-ratio: 1"></canvas>
-		<p class="muted" style="font-size: 0.8rem">
-			左上：山地（山頂に雪）／右上：農地（健全・乾燥・裸地）／左下：焼失跡／右下：都市／中央：川、右：湖
-		</p>
+		<p class="muted" style="font-size: 0.8rem">{t('sceneLegend')}</p>
 	</div>
 	<div class="panel">
 		<div class="btn-row">
-			<button class="ghost" class:active={mode === 'rgb'} onclick={() => (mode = 'rgb')}>RGB 合成</button>
-			<button class="ghost" class:active={mode === 'index'} onclick={() => (mode = 'index')}>指標 ({bandA} − {bandB})</button>
+			<button class="ghost" class:active={mode === 'rgb'} onclick={() => (mode = 'rgb')}>{t('sceneRgb')}</button>
+			<button class="ghost" class:active={mode === 'index'} onclick={() => (mode = 'index')}>{t('sceneIndex', bandA, bandB)}</button>
 		</div>
 		{#if mode === 'rgb'}
 			<div class="btn-row">
-				{#each composites as c (c.name)}
-					<button class="ghost" class:active={compR === c.r && compG === c.g && compB === c.b} onclick={() => applyComposite(c)} title={c.desc}>{c.name}</button>
+				{#each composites as c (c.name.ja)}
+					<button class="ghost" class:active={compR === c.r && compG === c.g && compB === c.b} onclick={() => applyComposite(c)} title={L(c.desc)}>{L(c.name)}</button>
 				{/each}
 			</div>
 			<div style="display: flex; gap: 1rem; margin: 0.6rem 0">
@@ -221,25 +216,20 @@
 				<label style="color: var(--accent)">B <select bind:value={compB}>{#each sceneBands as b (b)}<option value={b}>{b}</option>{/each}</select></label>
 			</div>
 			<div class="control">
-				<label for="gain">表示ゲイン（コントラストストレッチ）</label>
+				<label for="gain">{t('sceneGain')}</label>
 				<output>×{gain.toFixed(1)}</output>
 				<input id="gain" type="range" min="1" max="8" step="0.1" bind:value={gain} />
 			</div>
-			{#each composites as c (c.name)}
+			{#each composites as c (c.name.ja)}
 				{#if compR === c.r && compG === c.g && compB === c.b}
-					<p class="muted" style="font-size: 0.9rem">{c.desc}</p>
+					<p class="muted" style="font-size: 0.9rem">{L(c.desc)}</p>
 				{/if}
 			{/each}
 		{:else}
-			<p class="muted" style="font-size: 0.9rem">
-				赤 (−1) → 黄 (0) → 緑 (+1) のカラーマップ。上の指標ビルダーでバンドを変えると連動します。
-				NDVI なら植生が緑・水が赤、NDWI なら逆になることを確認してください。
-			</p>
+			<p class="muted" style="font-size: 0.9rem">{t('sceneIndexNote')}</p>
 		{/if}
 		<div class="note" style="margin-top: 1rem">
-			<strong>実務メモ：</strong> 反射率は 0〜1 ですが、地表の多くは 0.3 以下なので、そのまま 8bit にすると真っ暗になります。
-			上のゲインは最も単純なストレッチで、実際は 2〜98 パーセンタイルなどで線形ストレッチします。
-			また Sentinel-2 L2A の DN は <code>反射率 = (DN − 1000) / 10000</code>（2022 年 1 月の Baseline 04.00 以降のオフセット）で換算します。
+			<strong>{t('sceneMemoStrong')}</strong> {@html t('sceneMemo')}
 		</div>
 	</div>
 </div>
