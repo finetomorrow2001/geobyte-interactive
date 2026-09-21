@@ -123,6 +123,9 @@
 	let playing = $state(false);
 	/** 表示時刻の直前に撮影されたシーンへ画像 A を自動で切り替える */
 	let syncScene = $state(true);
+	/** 同期で画像が切り替わった直後の通知（凡例を点滅） */
+	let switched = $state<{ date: string; sat: string } | null>(null);
+	let switchedTimer: ReturnType<typeof setTimeout> | undefined;
 	/** スライダーの範囲 [分]: 過去側は検索期間（シーンの撮影時刻が必ず入る）、未来側は +10 日（パス予測と同じ） */
 	const rangeMin = $derived(-days * 1440);
 	const RANGE_MAX = 10 * 1440;
@@ -231,6 +234,7 @@
 	onDestroy(() => {
 		clearInterval(tickTimer);
 		clearTimeout(passDebounce);
+		clearTimeout(switchedTimer);
 		setTileListener(null);
 	});
 
@@ -424,6 +428,11 @@
 	function selectA(item: StacItem, fromSync = false) {
 		if (itemA?.id === item.id) return;
 		itemA = item;
+		if (fromSync) {
+			switched = { date: fmtDate(item.properties.datetime), sat: satLabel(item).split(' ')[0] };
+			clearTimeout(switchedTimer);
+			switchedTimer = setTimeout(() => (switched = null), 2500);
+		}
 		forMaps((m) => setFootprint(m, item));
 		refreshLayers();
 		if (point) queryPoint(point.lat, point.lon);
@@ -561,6 +570,19 @@
 			if (!best || km < best.km) best = { id: s.id, km };
 		}
 		return best;
+	});
+
+	/** 表示時刻から見た画像 A の古さと、次に画像が変わる撮影 */
+	const imageAge = $derived.by(() => {
+		if (!itemA || timeOffsetMin === 0) return null;
+		const acq = Date.parse(itemA.properties.datetime);
+		const ageMin = Math.max(0, Math.round((shownTime.getTime() - acq) / 60000));
+		let next: StacItem | undefined;
+		for (const it of items) {
+			const d = Date.parse(it.properties.datetime);
+			if (d > shownTime.getTime() + 60000 && (!next || d < Date.parse(next.properties.datetime))) next = it;
+		}
+		return { age: fmtOffset(ageMin).replace(/^[+−]/, ''), next };
 	});
 
 	/** スライダー上の目盛り: 過去のシーン撮影時刻と未来の予測パス */
@@ -776,6 +798,12 @@
 				{#if nearestSat}
 					<div class="nearest"><span class="swatch" style:background={satMeta(nearestSat.id).color}></span>{t('mapTimeNearest', satMeta(nearestSat.id).name.replace('Sentinel-', 'S'), Math.round(nearestSat.km).toLocaleString())}</div>
 				{/if}
+				{#if imageAge && itemA}
+					<div class="imgage">
+						<div>{t('mapTimeImage', fmtDate(itemA.properties.datetime), imageAge.age)}</div>
+						<div class="muted">{imageAge.next ? t('mapTimeNextScene', fmtDate(imageAge.next.properties.datetime), satLabel(imageAge.next).split(' ')[0]) : t('mapTimeNoNext')}</div>
+					</div>
+				{/if}
 				<div class="key">
 					<span><i class="k-swath"></i>{t('mapKeySwath')}</span>
 					<span><i class="k-scan"></i>{t('mapKeyScan')}</span>
@@ -789,7 +817,10 @@
 		<div class="loading">{loading ? t('mapLoadingStac') : t('mapLoadingTiles')}</div>
 	{/if}
 	{#if itemA}
-		<div class="legend">
+		{#if switched}
+			<div class="switched">{t('mapTimeSwitched', switched.date, switched.sat)}</div>
+		{/if}
+		<div class="legend" class:flash={!!switched}>
 			<div><strong>A</strong> {fmtDate(itemA.properties.datetime)} <span class="muted">{satLabel(itemA)} · {t('mapLegendCloud', cloud(itemA)?.toFixed(0))}</span></div>
 			{#if itemB}
 				<div><strong>B</strong> {fmtDate(itemB.properties.datetime)} <span class="muted">{satLabel(itemB)} · {t('mapLegendCloud', cloud(itemB)?.toFixed(0))}</span> <span class="muted">{t('mapLegendRight')}</span></div>
@@ -1318,6 +1349,47 @@
 	.timebar .nearest .swatch {
 		width: 7px;
 		height: 7px;
+	}
+	.timebar .imgage {
+		font-size: 0.66rem;
+		line-height: 1.4;
+		color: var(--accent-2);
+		border-top: 1px solid var(--border);
+		padding-top: 0.25rem;
+		margin-bottom: 0.3rem;
+	}
+	.switched {
+		position: absolute;
+		left: 50%;
+		top: 46%;
+		transform: translate(-50%, -50%);
+		z-index: 6;
+		background: rgba(11, 16, 32, 0.9);
+		border: 1px solid var(--accent-2);
+		color: var(--accent-2);
+		border-radius: 8px;
+		padding: 0.4rem 0.9rem;
+		font-size: 0.85rem;
+		font-weight: 600;
+		pointer-events: none;
+		animation: fadeout 2.5s forwards;
+	}
+	.legend.flash {
+		animation: flash 0.6s 3;
+	}
+	@keyframes flash {
+		50% {
+			border-color: var(--accent-2);
+			box-shadow: 0 0 0 2px rgba(139, 233, 253, 0.5);
+		}
+	}
+	@keyframes fadeout {
+		0%, 70% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+		}
 	}
 	.seg button.fs .fs-label {
 		margin-left: 0.35rem;
