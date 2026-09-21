@@ -153,7 +153,28 @@ export function destination(lat: number, lon: number, brg: number, dKm: number):
 	return [(((λ2 * R2D + 540) % 360) - 180), φ2 * R2D];
 }
 
-/** 直下点列の両側 ±half km を結んだ観測幅ポリゴン（経度分割なしの短い区間向け） */
+/**
+ * 経度を連続にする（±180° をまたいでも飛ばない）。
+ * MapLibre は ±180° を超える経度を隣の世界コピー側に描いてくれるので、分割せずそのまま渡せる。
+ */
+export function unwrapLons(pts: SubPoint[]): SubPoint[] {
+	const out: SubPoint[] = [];
+	let shift = 0;
+	for (let i = 0; i < pts.length; i++) {
+		if (i > 0) {
+			const d = pts[i].lon - pts[i - 1].lon;
+			if (d > 180) shift -= 360;
+			else if (d < -180) shift += 360;
+		}
+		out.push({ ...pts[i], lon: pts[i].lon + shift });
+	}
+	return out;
+}
+
+/** ref の経度に近い側へ ±360° 寄せる */
+const nearLon = (lon: number, ref: number) => (lon - ref > 180 ? lon - 360 : ref - lon > 180 ? lon + 360 : lon);
+
+/** 直下点列の両側 ±half km を結んだ観測幅ポリゴン（経度は unwrapLons 済みの連続値を想定） */
 export function swathPolygon(pts: SubPoint[], halfKm = HALF_SWATH_KM): [number, number][] {
 	if (pts.length < 2) return [];
 	const left: [number, number][] = [];
@@ -161,10 +182,48 @@ export function swathPolygon(pts: SubPoint[], halfKm = HALF_SWATH_KM): [number, 
 	for (let i = 0; i < pts.length; i++) {
 		const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
 		const h = bearingDeg(a.lat, a.lon, b.lat, b.lon);
-		left.push(destination(pts[i].lat, pts[i].lon, h - 90, halfKm));
-		right.push(destination(pts[i].lat, pts[i].lon, h + 90, halfKm));
+		const l = destination(pts[i].lat, pts[i].lon, h - 90, halfKm);
+		const r = destination(pts[i].lat, pts[i].lon, h + 90, halfKm);
+		left.push([nearLon(l[0], pts[i].lon), l[1]]);
+		right.push([nearLon(r[0], pts[i].lon), r[1]]);
 	}
 	return [...left, ...right.reverse(), left[0]];
+}
+
+/** 進行方向に直交する幅 2×half km の線 = その瞬間にセンサーが見ている 1 ライン */
+export function scanLine(p: SubPoint, heading: number, halfKm = HALF_SWATH_KM): [number, number][] {
+	const l = destination(p.lat, p.lon, heading - 90, halfKm);
+	const r = destination(p.lat, p.lon, heading + 90, halfKm);
+	return [
+		[nearLon(l[0], p.lon), l[1]],
+		[nearLon(r[0], p.lon), r[1]]
+	];
+}
+
+/**
+ * Sentinel-2 が撮影する条件: 下降中（北→南）かつ直下点が昼側。
+ * 上昇側は夜（地方時 22:30 頃）なので MSI は撮らない。
+ */
+export function isImaging(a: SubPoint, b: SubPoint, minSunEl = 5): boolean {
+	if (b.lat >= a.lat) return false;
+	return sunPosition(new Date(a.t), a.lat, a.lon).elevation > minSunEl;
+}
+
+/** 直下点列を「撮影している連続区間」ごとに切り出す */
+export function imagingSegments(pts: SubPoint[]): SubPoint[][] {
+	const segs: SubPoint[][] = [];
+	let cur: SubPoint[] = [];
+	for (let i = 0; i + 1 < pts.length; i++) {
+		if (isImaging(pts[i], pts[i + 1])) {
+			if (!cur.length) cur.push(pts[i]);
+			cur.push(pts[i + 1]);
+		} else if (cur.length) {
+			segs.push(cur);
+			cur = [];
+		}
+	}
+	if (cur.length > 1) segs.push(cur);
+	return segs;
 }
 
 // ---- パス予測 ----

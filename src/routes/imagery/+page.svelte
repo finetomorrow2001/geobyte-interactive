@@ -14,8 +14,11 @@
 		loadTles,
 		subPoint,
 		groundTrack,
-		splitAntimeridian,
+		unwrapLons,
 		swathPolygon,
+		scanLine,
+		imagingSegments,
+		bearingDeg,
 		predictPasses,
 		relativeOrbit,
 		fmtJst,
@@ -104,8 +107,19 @@
 	let selectedPass = $state<Pass | null>(null);
 	const satMarkers = new Map<MLMap, Partial<Record<SatId, ML.Marker>>>();
 	let tickTimer: ReturnType<typeof setInterval> | undefined;
-	let trackTimer: ReturnType<typeof setInterval> | undefined;
 	let passDebounce: ReturnType<typeof setTimeout> | undefined;
+	/** 表示時刻 = 現在 + オフセット [分]。0 = LIVE */
+	let timeOffsetMin = $state(0);
+	/** 60 倍速再生（1 秒ごとに +1 分） */
+	let playing = $state(false);
+	let shownTime = $state(new Date());
+	const displayTime = () => new Date(Date.now() + timeOffsetMin * 60000);
+	const fmtOffset = (m: number) => {
+		if (m === 0) return 'LIVE';
+		const a = Math.abs(m), sign = m < 0 ? '−' : '+';
+		if (a >= 1440) return `${sign}${Math.floor(a / 1440)}d ${Math.floor((a % 1440) / 60)}h`;
+		return `${sign}${a >= 60 ? `${Math.floor(a / 60)}h` : ''}${String(a % 60).padStart(a >= 60 ? 2 : 1, '0')}m`;
+	};
 	/** 観測幅に入る昼側（下降）パスだけが撮影対象 */
 	const imagingPasses = $derived(passes.filter((p) => p.descending && p.inSwath));
 	const trackHeading = $derived(imagingPasses[0]?.heading ?? null);
@@ -120,7 +134,8 @@
 				footprint: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
 				point: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
 				'orbit-track': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-				'orbit-swath': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
+				'orbit-swath': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+				'orbit-scan': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } }
 			},
 			layers: [
 				{ id: 'bg', type: 'background', paint: { 'background-color': '#0a0f1e' } },
@@ -130,7 +145,8 @@
 				{ id: 'footprint', type: 'line', source: 'footprint', paint: { 'line-color': '#8be9fd', 'line-width': 1.5, 'line-dasharray': [3, 3] } },
 				{ id: 'orbit-swath', type: 'fill', source: 'orbit-swath', paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.12 } },
 				{ id: 'orbit-swath-line', type: 'line', source: 'orbit-swath', paint: { 'line-color': ['get', 'color'], 'line-width': 1, 'line-opacity': 0.6 } },
-				{ id: 'orbit-track', type: 'line', source: 'orbit-track', paint: { 'line-color': ['get', 'color'], 'line-width': ['get', 'width'], 'line-opacity': 0.85 } },
+				{ id: 'orbit-track', type: 'line', source: 'orbit-track', paint: { 'line-color': ['get', 'color'], 'line-width': ['get', 'width'], 'line-opacity': 0.85, 'line-dasharray': ['case', ['get', 'imaging'], ['literal', [1, 0]], ['literal', [2, 3]]] } },
+				{ id: 'orbit-scan', type: 'line', source: 'orbit-scan', paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.95 } },
 				{ id: 'point', type: 'circle', source: 'point', paint: { 'circle-radius': 6, 'circle-color': 'rgba(255,184,108,0.3)', 'circle-stroke-color': '#ffb86c', 'circle-stroke-width': 2 } }
 			]
 		};
@@ -197,7 +213,6 @@
 
 	onDestroy(() => {
 		clearInterval(tickTimer);
-		clearInterval(trackTimer);
 		clearTimeout(passDebounce);
 		setTileListener(null);
 	});
@@ -218,7 +233,7 @@
 		if (point) setPointData(map, point);
 		if (tleSet) {
 			ensureSatMarkers(map);
-			updateTracks();
+			updateTracks(displayTime());
 		}
 		applyOrbitVisibility(map, showOrbit);
 	}
@@ -451,53 +466,86 @@
 	function startOrbit() {
 		forMaps(ensureSatMarkers);
 		tick();
-		updateTracks();
 		clearInterval(tickTimer);
-		clearInterval(trackTimer);
 		tickTimer = setInterval(tick, 1000);
-		trackTimer = setInterval(updateTracks, 60000);
 	}
 
-	/** 現在位置を 1 秒ごとに更新 */
+	/** 1 秒ごと: 表示時刻を進め、位置マーカー・軌跡・観測幅を更新 */
 	function tick() {
 		if (!tleSet) return;
-		const now = new Date();
+		if (playing) timeOffsetMin += 1;
+		const t = displayTime();
+		shownTime = t;
 		const next: Partial<Record<SatId, SubPoint>> = {};
-		for (const t of tleSet.tles) {
-			const p = subPoint(t, now);
+		for (const tle of tleSet.tles) {
+			const p = subPoint(tle, t);
 			if (!p) continue;
-			next[t.id] = p;
-			for (const rec of satMarkers.values()) rec[t.id]?.setLngLat([p.lon, p.lat]);
+			next[tle.id] = p;
+			for (const rec of satMarkers.values()) rec[tle.id]?.setLngLat([p.lon, p.lat]);
 		}
 		satNow = next;
+		updateTracks(t);
 	}
 
-	/** これから 1 周（約 100 分）の地上軌跡 + 選択パスの観測幅 */
-	function updateTracks() {
+	/**
+	 * 表示時刻の前後 50 分の地上軌跡（撮影中は実線、それ以外は点線）、
+	 * 撮影区間の観測幅（幅 290 km）、いまセンサーが見ている 1 ライン、選択パスの強調。
+	 */
+	function updateTracks(t: Date) {
 		if (!tleSet) return;
-		const now = new Date();
-		const features: GeoJSON.Feature[] = [];
-		for (const t of tleSet.tles) {
-			const color = SATS.find((s) => s.id === t.id)!.color;
-			const segs = splitAntimeridian(groundTrack(t, now, 101, 30));
-			features.push({ type: 'Feature', geometry: { type: 'MultiLineString', coordinates: segs }, properties: { color, width: 1.5 } });
-		}
+		const lines: GeoJSON.Feature[] = [];
 		const swath: GeoJSON.Feature[] = [];
+		const scan: GeoJSON.Feature[] = [];
+		for (const tle of tleSet.tles) {
+			const color = SATS.find((s) => s.id === tle.id)!.color;
+			const pts = unwrapLons(groundTrack(tle, new Date(t.getTime() - 50 * 60000), 100, 30));
+			lines.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: pts.map((p) => [p.lon, p.lat]) }, properties: { color, width: 1.2, imaging: false } });
+			for (const seg of imagingSegments(pts)) {
+				lines.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: seg.map((p) => [p.lon, p.lat]) }, properties: { color, width: 2, imaging: true } });
+				swath.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [swathPolygon(seg)] }, properties: { color } });
+			}
+			// 現在の観測ライン（進行方向は 10 秒後の位置から）
+			const p0 = subPoint(tle, t), p1 = subPoint(tle, new Date(t.getTime() + 10000));
+			if (p0 && p1) {
+				const h = bearingDeg(p0.lat, p0.lon, p1.lat, p1.lon);
+				scan.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: scanLine(p0, h) }, properties: { color } });
+			}
+		}
 		if (selectedPass) {
-			const t = tleSet.tles.find((x) => x.id === selectedPass!.sat)!;
-			const color = SATS.find((s) => s.id === t.id)!.color;
-			const pts = groundTrack(t, new Date(selectedPass.time.getTime() - 5 * 60000), 10, 15);
+			const tle = tleSet.tles.find((x) => x.id === selectedPass!.sat)!;
+			const color = SATS.find((s) => s.id === tle.id)!.color;
+			const pts = unwrapLons(groundTrack(tle, new Date(selectedPass.time.getTime() - 5 * 60000), 10, 15));
 			swath.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [swathPolygon(pts)] }, properties: { color } });
-			features.push({ type: 'Feature', geometry: { type: 'MultiLineString', coordinates: splitAntimeridian(pts) }, properties: { color, width: 3 } });
+			lines.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: pts.map((p) => [p.lon, p.lat]) }, properties: { color, width: 3.5, imaging: true } });
 		}
 		forMaps((m) => {
-			(m.getSource('orbit-track') as ML.GeoJSONSource).setData({ type: 'FeatureCollection', features });
+			(m.getSource('orbit-track') as ML.GeoJSONSource).setData({ type: 'FeatureCollection', features: lines });
 			(m.getSource('orbit-swath') as ML.GeoJSONSource).setData({ type: 'FeatureCollection', features: swath });
+			(m.getSource('orbit-scan') as ML.GeoJSONSource).setData({ type: 'FeatureCollection', features: scan });
 		});
 	}
 
+	/** パス行クリック: 表示時刻をそのパスの瞬間へ飛ばす（もう一度で解除） */
+	function selectPass(p: Pass) {
+		if (selectedPass === p) {
+			selectedPass = null;
+		} else {
+			selectedPass = p;
+			playing = false;
+			timeOffsetMin = Math.round((p.time.getTime() - Date.now()) / 60000);
+		}
+		tick();
+	}
+
+	/** スライダーは ±24h だが、パス行からのジャンプはその外でもよい */
+	function setOffset(m: number) {
+		timeOffsetMin = m;
+		if (m === 0) playing = false;
+		tick();
+	}
+
 	function applyOrbitVisibility(map: MLMap, on: boolean) {
-		for (const id of ['orbit-track', 'orbit-swath', 'orbit-swath-line']) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+		for (const id of ['orbit-track', 'orbit-swath', 'orbit-swath-line', 'orbit-scan']) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
 		const rec = satMarkers.get(map);
 		if (rec) for (const mk of Object.values(rec)) mk.getElement().style.display = on ? '' : 'none';
 	}
@@ -520,13 +568,8 @@
 		// 選択中のパスが消えたら解除
 		if (selectedPass && !passes.find((p) => p.sat === selectedPass!.sat && Math.abs(p.time.getTime() - selectedPass!.time.getTime()) < 120000)) {
 			selectedPass = null;
-			updateTracks();
+			tick();
 		}
-	}
-
-	function selectPass(p: Pass) {
-		selectedPass = selectedPass === p ? null : p;
-		updateTracks();
 	}
 
 	/** 同じ衛星がちょうど 10 日周期（±3 分）前にこの場所を撮ったシーン → 同じ相対軌道 */
@@ -574,7 +617,8 @@
 		<li><strong>3D で見る</strong> — 地図右上の「3D」で標高データを重ねて傾けます。右ドラッグ（または Ctrl+ドラッグ）で回転・傾き、コンパスをクリックすると北が上に戻ります。コンパスには <span style="color: #f1fa8c">☀ 撮影時の太陽方位</span>と<span style="color: var(--green)">▲ 衛星の進行方向</span>も出ます。雲の影は ☀ の反対側に落ちます。</li>
 		<li><strong>クリックで値を見る</strong> — 地図上の任意の点をクリック → 右下に 7 バンドの DN と 6 指標の値。森・水・建物・雲・雲影をクリックして NDVI がどう変わるか確かめてください。</li>
 		<li><strong>2 時期を比べる</strong> — サムネイル右上の「B」で比較レイヤーを設定 → 地図中央の橙スライダーを左右にドラッグ。左が A、右が B。値パネルには B − A の差分も出ます。</li>
-		<li><strong>次の撮影を予測する</strong> — 「衛星軌道」パネルに、実際の TLE から計算した Sentinel-2A/2B/2C の現在位置と、地図中心が次に撮影される日時が出ます。検索結果のシーン日付と見比べてください。</li>
+		<li><strong>衛星をリアルタイムで追う</strong> — 地図右上の「🛰 軌道」で、実際の TLE から計算した Sentinel-2A/2B/2C の現在位置（1 秒更新）、軌道直下の軌跡、撮影中の<strong>観測幅 290 km</strong>（塗り）と<strong>いま見ている 1 ライン</strong>（太線）を重ねます。点線区間は夜側・上昇側で撮影していません。時刻バーの ▶（60 倍速）やスライダーで前後 24 時間をスクラブでき、地図の場所を観測幅が横切る瞬間が見えます。</li>
+		<li><strong>次の撮影を予測する</strong> — 「次にここが撮影されるのは」パネルに、地図中心が観測幅に入る日時が出ます。行をクリックすると表示時刻がその瞬間に飛び、衛星が真上を通る様子と観測幅を確認できます。検索結果のシーン日付と見比べてください。</li>
 	</ol>
 	<p class="muted" style="font-size: 0.85rem; margin: 0.3rem 0 0">
 		おすすめの体験：<strong>富士山</strong>で 3D + 「NDSI 雪」と「SWIR 合成」（雪と雲の区別）／<strong>琵琶湖</strong>で「NDWI 水域」／<strong>十勝平野</strong>で「農業」合成と 2 時期比較（作物の生育差）／<strong>東京</strong>で皇居・代々木公園と市街地の NDVI 差。
@@ -601,8 +645,30 @@
 			<button class:active={!is3D} onclick={() => (is3D = false)}>2D</button>
 			<button class:active={is3D} onclick={() => (is3D = true)} title="標高タイルを重ねて傾けます">3D</button>
 		</div>
-		<Compass {bearing} {pitch} sunAzimuth={sunAz} sunElevation={sunEl} {trackHeading} onreset={resetNorth} />
-		<button class="seg-toggle" class:active={showOrbit} onclick={() => (showOrbit = !showOrbit)} title="Sentinel-2 の現在位置と地上軌跡（実 TLE）">🛰 軌道</button>
+		<div class="compass-box">
+			<Compass {bearing} {pitch} sunAzimuth={sunAz} sunElevation={sunEl} {trackHeading} onreset={resetNorth} />
+			<div class="compass-key"><span style="color: #f1fa8c">●</span> 太陽 <span style="color: var(--green)">▲</span> 衛星の進行方向</div>
+		</div>
+		<button class="seg-toggle" class:active={showOrbit} onclick={() => (showOrbit = !showOrbit)} title="Sentinel-2A/2B/2C の位置・軌道直下の軌跡・観測幅（実 TLE から計算）">🛰 軌道 {showOrbit ? 'ON' : 'OFF'}</button>
+		{#if showOrbit && tleSet}
+			<div class="timebar">
+				<div class="t"><span class="mono">{fmtJst(shownTime)}</span> <span class="off" class:live={timeOffsetMin === 0}>{fmtOffset(timeOffsetMin)}</span></div>
+				<div class="row">
+					<button onclick={() => setOffset(timeOffsetMin - 60)} title="1 時間戻す">−1h</button>
+					<button onclick={() => setOffset(timeOffsetMin - 10)} title="10 分戻す">−10m</button>
+					<button class:active={playing} onclick={() => { playing = !playing; }} title="60 倍速で再生">{playing ? '❚❚' : '▶'}</button>
+					<button onclick={() => setOffset(timeOffsetMin + 10)} title="10 分進める">+10m</button>
+					<button onclick={() => setOffset(timeOffsetMin + 60)} title="1 時間進める">+1h</button>
+					<button class="live" disabled={timeOffsetMin === 0 && !playing} onclick={() => setOffset(0)}>LIVE</button>
+				</div>
+				<input type="range" min="-1440" max="1440" step="1" value={timeOffsetMin} oninput={(e) => setOffset(+e.currentTarget.value)} aria-label="表示時刻のオフセット（分）" />
+				<div class="key">
+					<span><i class="k-swath"></i>撮影中の観測幅 290 km</span>
+					<span><i class="k-scan"></i>いま見ている 1 ライン</span>
+					<span><i class="k-dash"></i>夜側・上昇側（撮影なし）</span>
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	{#if tilesLoading || loading}
@@ -724,7 +790,8 @@
 				</tbody>
 			</table>
 			<p class="muted" style="font-size: 0.78rem">
-				地図の線はこれから 1 周（約 100 分）の地上軌跡。3 機とも高度約 790 km・傾斜角 98.6° の太陽同期軌道で、下降側（北→南）を地方時 10:30 頃に通ります。
+				位置は表示時刻（地図右上の時刻バー、既定は LIVE）のもの。地図の線は表示時刻の前後 50 分の軌道直下の軌跡で、塗りは撮影中の観測幅（幅 290 km）。
+				3 機とも高度約 790 km・傾斜角 98.6° の太陽同期軌道で、下降側（北→南）を地方時 10:30 頃に通り、そこだけ撮影します。地上速度は約 6.8 km/s——日本列島（約 2,000 km）を 5 分で縦断します。
 			</p>
 		{/if}
 	</div>
@@ -757,7 +824,7 @@
 			<p class="muted" style="font-size: 0.78rem">
 				地図中心を観測幅に収める下降（昼側）パスを、地図を動かすごとに再計算。「10 日前」に ✓ があれば、同じ衛星が同じ相対軌道（R 番号）でちょうど 10 日前に撮ったシーンが検索結果にあります——
 				Sentinel-2 の 10 日回帰が実データで確かめられます。行をクリックすると、その時の観測幅（幅 290 km）を地図に描きます。
-				陸域は系統的に撮影されますが、実際にシーンが公開されるかは取得計画と処理状況によります。
+				行をクリックすると表示時刻がその瞬間に飛びます。陸域は系統的に撮影されますが、実際にシーンが公開されるかは取得計画と処理状況によります。
 			</p>
 		{/if}
 	</div>
@@ -998,6 +1065,98 @@
 	.seg-toggle.active {
 		color: var(--text);
 		border-color: var(--accent);
+	}
+	.compass-box {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.1rem;
+	}
+	.compass-key {
+		font-size: 0.62rem;
+		color: var(--muted);
+		background: rgba(11, 16, 32, 0.8);
+		border-radius: 4px;
+		padding: 0.05rem 0.35rem;
+		white-space: nowrap;
+	}
+	.timebar {
+		width: 230px;
+		background: rgba(11, 16, 32, 0.88);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		padding: 0.4rem 0.5rem;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+		font-size: 0.72rem;
+	}
+	.timebar .t {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		margin-bottom: 0.3rem;
+	}
+	.timebar .mono {
+		font-family: var(--mono);
+		font-size: 0.8rem;
+	}
+	.timebar .off {
+		font-family: var(--mono);
+		color: var(--orange);
+	}
+	.timebar .off.live {
+		color: var(--green);
+	}
+	.timebar .row {
+		display: flex;
+		gap: 2px;
+	}
+	.timebar .row button {
+		flex: 1;
+		padding: 0.15rem 0;
+		font-size: 0.68rem;
+		font-weight: 600;
+		background: var(--panel);
+		color: var(--muted);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+	}
+	.timebar .row button.active {
+		color: var(--text);
+		border-color: var(--accent);
+	}
+	.timebar .row button.live:not(:disabled) {
+		color: var(--green);
+	}
+	.timebar input[type='range'] {
+		width: 100%;
+		margin: 0.35rem 0 0.2rem;
+		accent-color: var(--accent);
+	}
+	.timebar .key {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		color: var(--muted);
+		font-size: 0.64rem;
+	}
+	.timebar .key i {
+		display: inline-block;
+		width: 14px;
+		height: 6px;
+		margin-right: 0.35rem;
+		vertical-align: middle;
+	}
+	.k-swath {
+		background: rgba(139, 233, 253, 0.25);
+		border: 1px solid var(--accent-2);
+	}
+	.k-scan {
+		height: 3px !important;
+		background: var(--accent-2);
+	}
+	.k-dash {
+		height: 0 !important;
+		border-top: 1.5px dashed var(--accent-2);
 	}
 	.loading {
 		position: absolute;
