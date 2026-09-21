@@ -12,5 +12,7 @@ export default defineConfig({
 			},
 			adapter: adapter()
 		})
-	]
+	],
+	// maplibre-gl v6 は別ファイルの Worker を import.meta.url で探すので、依存の事前バンドルから外す
+	optimizeDeps: { exclude: ['maplibre-gl'] }
 });

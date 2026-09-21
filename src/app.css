@@ -245,11 +245,12 @@ canvas {
 	border-radius: 8px;
 	border: 1px solid var(--border);
 }
-/* Leaflet の地図タイル（canvas）には枠を付けない */
-.leaflet-tile {
+/* MapLibre の地図 canvas には枠を付けない */
+.maplibregl-canvas {
 	border: none !important;
 	border-radius: 0 !important;
 	image-rendering: auto;
+	max-width: none;
 }
 
 .tag {
