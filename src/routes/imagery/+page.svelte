@@ -68,6 +68,9 @@
 	let swipe = $state(50);
 	let basemap = $state<'osm' | 'esri'>('osm');
 	let is3D = $state(false);
+	/** 地図の全画面表示（Fullscreen API。使えない環境では CSS でビューポート全体に固定） */
+	let fullscreen = $state(false);
+	let mapWrapEl: HTMLDivElement;
 	let bearing = $state(0);
 	let pitch = $state(0);
 	let tilesLoading = $state(false);
@@ -289,6 +292,26 @@
 	function resetNorth() {
 		mapA.easeTo({ bearing: 0, duration: 500 });
 	}
+
+	async function toggleFullscreen() {
+		if (document.fullscreenEnabled) {
+			if (document.fullscreenElement === mapWrapEl) await document.exitFullscreen();
+			else await mapWrapEl.requestFullscreen().catch(() => (fullscreen = !fullscreen));
+		} else {
+			fullscreen = !fullscreen;
+		}
+	}
+	function onFullscreenChange() {
+		fullscreen = document.fullscreenElement === mapWrapEl;
+	}
+	// コンテナのサイズが変わったら MapLibre に知らせる
+	$effect(() => {
+		void fullscreen;
+		untrack(() => {
+			requestAnimationFrame(() => forMaps((m) => m.resize()));
+			setTimeout(() => forMaps((m) => m.resize()), 350);
+		});
+	});
 
 	// ---- COG レイヤー ----
 	function setCog(map: MLMap, slot: 'a' | 'b', item: StacItem | null) {
@@ -631,7 +654,9 @@
 	{/each}
 </div>
 
-<div class="mapwrap">
+<svelte:document onfullscreenchange={onFullscreenChange} />
+
+<div class="mapwrap" class:fullscreen bind:this={mapWrapEl}>
 	<div bind:this={mapElA} class="map"></div>
 	<!-- 比較用の 2 枚目。B 選択時だけ生成され、右側 (swipe% 以降) のみ表示 -->
 	<div bind:this={mapElB} class="map mapB" class:hidden={!itemB} style:clip-path="inset(0 0 0 {swipe}%)"></div>
@@ -644,6 +669,13 @@
 		<div class="seg" role="group" aria-label="2D / 3D">
 			<button class:active={!is3D} onclick={() => (is3D = false)}>2D</button>
 			<button class:active={is3D} onclick={() => (is3D = true)} title="標高タイルを重ねて傾けます">3D</button>
+			<button class="fs" onclick={toggleFullscreen} title={fullscreen ? '全画面を終了 (Esc)' : '地図を全画面に'} aria-label={fullscreen ? '全画面を終了' : '地図を全画面に'}>
+				{#if fullscreen}
+					<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" /></svg>
+				{:else}
+					<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" /></svg>
+				{/if}
+			</button>
 		</div>
 		<div class="compass-box">
 			<Compass {bearing} {pitch} sunAzimuth={sunAz} sunElevation={sunEl} {trackHeading} onreset={resetNorth} />
@@ -1014,9 +1046,29 @@
 		overflow: hidden;
 		background: #0a0f1e;
 	}
+	/* Fullscreen API が使えない環境向けのフォールバック（実際の全画面時は :fullscreen が効く） */
+	.mapwrap.fullscreen {
+		position: fixed;
+		inset: 0;
+		z-index: 10000;
+		height: 100vh;
+		height: 100dvh;
+		margin: 0;
+		border-radius: 0;
+		border: none;
+	}
+	.mapwrap:fullscreen {
+		border-radius: 0;
+		border: none;
+	}
 	.map {
 		position: absolute;
 		inset: 0;
+	}
+	.seg button.fs {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.3rem 0.55rem;
 	}
 	.mapB.hidden {
 		visibility: hidden;

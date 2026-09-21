@@ -3,6 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
 	import { modules } from '$lib/modules';
+	import { i18n, setLang, L, LANGS } from '$lib/i18n/lang.svelte';
 
 	let { children } = $props();
 </script>
@@ -21,11 +22,16 @@
 			{#each modules as m, i (m.path)}
 				<a href={m.path} class:active={page.url.pathname === m.path}>
 					<span class="idx">{String(i + 1).padStart(2, '0')}</span>
-					<span>{m.title}</span>
+					<span>{L(m.title)}</span>
 				</a>
 			{/each}
 		</nav>
-		<p class="foot muted">エンジニア向け 衛星データ利用 入門</p>
+		<div class="lang" role="group" aria-label="Language">
+			{#each LANGS as l (l)}
+				<button class:active={i18n.lang === l} onclick={() => setLang(l)} lang={l}>{l === 'ja' ? '日本語' : 'English'}</button>
+			{/each}
+		</div>
+		<p class="foot muted">{i18n.lang === 'ja' ? 'エンジニア向け 衛星データ利用 入門' : 'Satellite data for engineers'}</p>
 	</aside>
 	<main>
 		{@render children()}
@@ -88,8 +94,32 @@
 		color: var(--accent);
 		padding-top: 0.15rem;
 	}
-	.foot {
+	.lang {
 		margin-top: auto;
+		display: inline-flex;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		overflow: hidden;
+		align-self: flex-start;
+	}
+	.lang button {
+		background: transparent;
+		color: var(--muted);
+		border: none;
+		border-radius: 0;
+		padding: 0.25rem 0.7rem;
+		font-size: 0.78rem;
+		font-weight: 600;
+	}
+	.lang button + button {
+		border-left: 1px solid var(--border);
+	}
+	.lang button.active {
+		background: var(--panel-2);
+		color: var(--text);
+	}
+	.foot {
+		margin-top: 0.6rem;
 		font-size: 0.75rem;
 	}
 	main {
@@ -113,6 +143,9 @@
 		}
 		.foot {
 			display: none;
+		}
+		.lang {
+			margin-top: 0.5rem;
 		}
 		main {
 			padding: 1.2rem 1rem 3rem;
