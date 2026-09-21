@@ -154,7 +154,9 @@
 				{ id: 'orbit-swath', type: 'fill', source: 'orbit-swath', paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.12 } },
 				{ id: 'orbit-swath-line', type: 'line', source: 'orbit-swath', paint: { 'line-color': ['get', 'color'], 'line-width': 1, 'line-opacity': 0.6 } },
 				{ id: 'orbit-track', type: 'line', source: 'orbit-track', paint: { 'line-color': ['get', 'color'], 'line-width': ['get', 'width'], 'line-opacity': 0.85, 'line-dasharray': ['case', ['get', 'imaging'], ['literal', [1, 0]], ['literal', [2, 3]]] } },
-				{ id: 'orbit-scan', type: 'line', source: 'orbit-scan', paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.95 } },
+				// 観測幅と同色だと埋もれるので、衛星色の縁取り + 白の芯線で描く
+				{ id: 'orbit-scan-casing', type: 'line', source: 'orbit-scan', paint: { 'line-color': ['get', 'color'], 'line-width': 6, 'line-opacity': 0.9 } },
+				{ id: 'orbit-scan', type: 'line', source: 'orbit-scan', paint: { 'line-color': '#ffffff', 'line-width': 2.5 } },
 				{ id: 'point', type: 'circle', source: 'point', paint: { 'circle-radius': 6, 'circle-color': 'rgba(255,184,108,0.3)', 'circle-stroke-color': '#ffb86c', 'circle-stroke-width': 2 } }
 			]
 		};
@@ -573,7 +575,7 @@
 	}
 
 	function applyOrbitVisibility(map: MLMap, on: boolean) {
-		for (const id of ['orbit-track', 'orbit-swath', 'orbit-swath-line', 'orbit-scan']) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+		for (const id of ['orbit-track', 'orbit-swath', 'orbit-swath-line', 'orbit-scan-casing', 'orbit-scan']) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
 		const rec = satMarkers.get(map);
 		if (rec) for (const mk of Object.values(rec)) mk.getElement().style.display = on ? '' : 'none';
 	}
@@ -1198,7 +1200,8 @@
 	}
 	.k-scan {
 		height: 3px !important;
-		background: var(--accent-2);
+		background: #fff;
+		box-shadow: 0 0 0 1.5px var(--accent-2);
 	}
 	.k-dash {
 		height: 0 !important;
