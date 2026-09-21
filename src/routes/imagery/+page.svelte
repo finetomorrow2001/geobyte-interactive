@@ -19,6 +19,7 @@
 		scanLine,
 		imagingSegments,
 		bearingDeg,
+		distanceKm,
 		predictPasses,
 		relativeOrbit,
 		fmtJst,
@@ -120,6 +121,12 @@
 	let timeOffsetMin = $state(0);
 	/** 60 倍速再生（1 秒ごとに +1 分） */
 	let playing = $state(false);
+	/** 表示時刻の直前に撮影されたシーンへ画像 A を自動で切り替える */
+	let syncScene = $state(true);
+	/** スライダーの範囲 [分]: 過去側は検索期間（シーンの撮影時刻が必ず入る）、未来側は +10 日（パス予測と同じ） */
+	const rangeMin = $derived(-days * 1440);
+	const RANGE_MAX = 10 * 1440;
+	const offToPct = (off: number) => ((off - rangeMin) / (RANGE_MAX - rangeMin)) * 100;
 	let shownTime = $state(new Date());
 	const displayTime = () => new Date(Date.now() + timeOffsetMin * 60000);
 	const fmtOffset = (m: number) => {
@@ -414,11 +421,32 @@
 		search();
 	}
 
-	function selectA(item: StacItem) {
+	function selectA(item: StacItem, fromSync = false) {
+		if (itemA?.id === item.id) return;
 		itemA = item;
 		forMaps((m) => setFootprint(m, item));
 		refreshLayers();
 		if (point) queryPoint(point.lat, point.lon);
+		// スクラブ中に手で選んだら、表示時刻もそのシーンの撮影時刻へ（衛星が真上に来る）
+		if (!fromSync && syncScene && timeOffsetMin !== 0) {
+			selectedPass = null;
+			// 切り上げ: 分単位に丸めても撮影時刻より前にならないように
+			timeOffsetMin = Math.ceil((Date.parse(item.properties.datetime) - Date.now()) / 60000);
+			tick();
+		}
+	}
+
+	/** 表示時刻の直前に撮影されたシーン（無ければ最古）。分単位の丸め誤差を吸収するため 1 分の許容 */
+	function sceneAt(t: Date): StacItem | undefined {
+		let best: StacItem | undefined;
+		let oldest: StacItem | undefined;
+		const limit = t.getTime() + 60000;
+		for (const it of items) {
+			const d = Date.parse(it.properties.datetime);
+			if (!oldest || d < Date.parse(oldest.properties.datetime)) oldest = it;
+			if (d <= limit && (!best || d > Date.parse(best.properties.datetime))) best = it;
+		}
+		return best ?? oldest;
 	}
 
 	function selectB(item: StacItem | null) {
@@ -515,7 +543,43 @@
 		}
 		satNow = next;
 		updateTracks(t);
+		// LIVE 以外では、表示時刻に対応するシーンへ画像を合わせる
+		if (syncScene && timeOffsetMin !== 0 && items.length) {
+			const it = sceneAt(t);
+			if (it && it.id !== itemA?.id) selectA(it, true);
+		}
 	}
+
+	/** 表示時刻に地図中心へ最も近い衛星（時刻バーの読み出し用） */
+	const nearestSat = $derived.by(() => {
+		if (!passTarget) return null;
+		let best: { id: SatId; km: number } | null = null;
+		for (const s of SATS) {
+			const p = satNow[s.id];
+			if (!p) continue;
+			const km = distanceKm(passTarget.lat, passTarget.lon, p.lat, p.lon);
+			if (!best || km < best.km) best = { id: s.id, km };
+		}
+		return best;
+	});
+
+	/** スライダー上の目盛り: 過去のシーン撮影時刻と未来の予測パス */
+	const timeTicks = $derived.by(() => {
+		const now = Date.now();
+		const out: { off: number; color: string; title: string; kind: 'scene' | 'pass' }[] = [];
+		for (const it of items) {
+			const off = (Date.parse(it.properties.datetime) - now) / 60000;
+			if (off < rangeMin || off > 0) continue;
+			const sat = SATS.find((x) => x.id === it.properties.platform);
+			out.push({ off, color: sat?.color ?? '#fff', kind: 'scene', title: t('mapTimeTickScene', fmtDate(it.properties.datetime), satLabel(it).split(' ')[0]) });
+		}
+		for (const p of imagingPasses) {
+			const off = (p.time.getTime() - now) / 60000;
+			if (off > RANGE_MAX) continue;
+			out.push({ off, color: satMeta(p.sat).color, kind: 'pass', title: t('mapTimeTickPass', fmtJst(p.time), satMeta(p.sat).name.replace('Sentinel-', 'S')) });
+		}
+		return out;
+	});
 
 	/**
 	 * 表示時刻の前後 50 分の地上軌跡（撮影中は実線、それ以外は点線）、
@@ -567,7 +631,7 @@
 		tick();
 	}
 
-	/** スライダーは ±24h だが、パス行からのジャンプはその外でもよい */
+	/** スライダーは ±10 日だが、パス行からのジャンプはその外でもよい */
 	function setOffset(m: number) {
 		timeOffsetMin = m;
 		if (m === 0) playing = false;
@@ -673,9 +737,10 @@
 		<div class="seg" role="group" aria-label="2D / 3D">
 			<button class:active={!is3D} onclick={() => (is3D = false)}>2D</button>
 			<button class:active={is3D} onclick={() => (is3D = true)} title={t('map3dTitle')}>3D</button>
-			<button class="fs" onclick={toggleFullscreen} title={fullscreen ? t('mapFsExitTitle') : t('mapFsEnterTitle')} aria-label={fullscreen ? t('mapFsExit') : t('mapFsEnter')}>
+			<button class="fs" class:active={fullscreen} onclick={toggleFullscreen} title={fullscreen ? t('mapFsExitTitle') : t('mapFsEnterTitle')} aria-label={fullscreen ? t('mapFsExit') : t('mapFsEnter')}>
 				{#if fullscreen}
 					<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" /></svg>
+					<span class="fs-label">{t('mapFsExitBtn')} (Esc)</span>
 				{:else}
 					<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" /></svg>
 				{/if}
@@ -690,14 +755,27 @@
 			<div class="timebar">
 				<div class="t"><span class="mono">{fmtJst(shownTime)}</span> <span class="off" class:live={timeOffsetMin === 0}>{fmtOffset(timeOffsetMin)}</span></div>
 				<div class="row">
+					<button onclick={() => setOffset(timeOffsetMin - 1440)} title={t('mapTimeBack1d')}>−1d</button>
 					<button onclick={() => setOffset(timeOffsetMin - 60)} title={t('mapTimeBack1h')}>−1h</button>
-					<button onclick={() => setOffset(timeOffsetMin - 10)} title={t('mapTimeBack10m')}>−10m</button>
 					<button class:active={playing} onclick={() => { playing = !playing; }} title={t('mapTimePlay')}>{playing ? '❚❚' : '▶'}</button>
-					<button onclick={() => setOffset(timeOffsetMin + 10)} title={t('mapTimeFwd10m')}>+10m</button>
 					<button onclick={() => setOffset(timeOffsetMin + 60)} title={t('mapTimeFwd1h')}>+1h</button>
+					<button onclick={() => setOffset(timeOffsetMin + 1440)} title={t('mapTimeFwd1d')}>+1d</button>
 					<button class="live" disabled={timeOffsetMin === 0 && !playing} onclick={() => setOffset(0)}>LIVE</button>
 				</div>
-				<input type="range" min="-1440" max="1440" step="1" value={timeOffsetMin} oninput={(e) => setOffset(+e.currentTarget.value)} aria-label={t('mapTimeOffsetAria')} />
+				<div class="slider">
+					<input type="range" min={rangeMin} max={RANGE_MAX} step="10" value={timeOffsetMin} oninput={(e) => setOffset(+e.currentTarget.value)} aria-label={t('mapTimeOffsetAria', days)} />
+					<div class="ticks">
+						<!-- 現在 (LIVE) の位置 -->
+						<span class="now" style:left="{offToPct(0)}%"></span>
+						{#each timeTicks as tk (tk.kind + tk.off)}
+							<button class="tick" class:pass={tk.kind === 'pass'} style:left="{offToPct(tk.off)}%" style:--c={tk.color} title={tk.title} onclick={() => setOffset(Math.ceil(tk.off))} aria-label={tk.title}></button>
+						{/each}
+					</div>
+				</div>
+				<label class="sync" title={t('mapTimeSyncTitle')}><input type="checkbox" bind:checked={syncScene} /> {t('mapTimeSync')}</label>
+				{#if nearestSat}
+					<div class="nearest"><span class="swatch" style:background={satMeta(nearestSat.id).color}></span>{t('mapTimeNearest', satMeta(nearestSat.id).name.replace('Sentinel-', 'S'), Math.round(nearestSat.km).toLocaleString())}</div>
+				{/if}
 				<div class="key">
 					<span><i class="k-swath"></i>{t('mapKeySwath')}</span>
 					<span><i class="k-scan"></i>{t('mapKeyScan')}</span>
@@ -1175,10 +1253,78 @@
 	.timebar .row button.live:not(:disabled) {
 		color: var(--green);
 	}
+	.timebar .slider {
+		position: relative;
+		margin: 0.35rem 0 0.2rem;
+	}
 	.timebar input[type='range'] {
 		width: 100%;
-		margin: 0.35rem 0 0.2rem;
+		margin: 0;
 		accent-color: var(--accent);
+		display: block;
+	}
+	/* スライダー下の目盛り: シーン撮影時刻（過去）と予測パス（未来） */
+	.timebar .ticks {
+		position: relative;
+		height: 8px;
+		margin: 1px 7px 0;
+	}
+	.timebar .tick {
+		position: absolute;
+		top: 0;
+		width: 3px;
+		height: 8px;
+		padding: 0;
+		margin-left: -1.5px;
+		border: none;
+		border-radius: 1px;
+		background: var(--c);
+		cursor: pointer;
+	}
+	.timebar .now {
+		position: absolute;
+		top: -1px;
+		width: 1px;
+		height: 10px;
+		margin-left: -0.5px;
+		background: var(--green);
+		opacity: 0.8;
+	}
+	.timebar .tick.pass {
+		height: 6px;
+		opacity: 0.6;
+	}
+	.timebar .tick:hover {
+		height: 10px;
+		opacity: 1;
+	}
+	.timebar .sync {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		margin: 0.3rem 0 0.15rem;
+		color: var(--text);
+		cursor: pointer;
+	}
+	.timebar .sync input {
+		margin: 0;
+		accent-color: var(--accent);
+	}
+	.timebar .nearest {
+		color: var(--muted);
+		font-size: 0.66rem;
+		margin-bottom: 0.25rem;
+	}
+	.timebar .nearest .swatch {
+		width: 7px;
+		height: 7px;
+	}
+	.seg button.fs .fs-label {
+		margin-left: 0.35rem;
+		font-size: 0.75rem;
+	}
+	.seg button.fs.active {
+		color: var(--orange);
 	}
 	.timebar .key {
 		display: flex;
