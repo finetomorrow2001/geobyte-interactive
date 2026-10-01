@@ -755,7 +755,16 @@
 	// 時系列チャート
 	const CX0 = 40, CX1 = 780, CY0 = 10, CY1 = 150;
 	const sx = (i: number, n: number) => (n <= 1 ? (CX0 + CX1) / 2 : CX0 + (i / (n - 1)) * (CX1 - CX0));
-	const sy = (v: number) => CY1 - ((v + 1) / 2) * (CY1 - CY0);
+	// 年次比較は差が小さいので、値の範囲に合わせて縦軸を拡大する（検索結果モードは -1〜1 固定）
+	const yRange = $derived.by((): [number, number] => {
+		const vs = series.flatMap((x) => (x.v === null ? [] : [x.v]));
+		if (seriesSource !== 'yearly' || vs.length < 2) return [-1, 1];
+		const lo = Math.min(...vs), hi = Math.max(...vs);
+		const pad = Math.max((hi - lo) * 0.2, 0.02);
+		return [Math.max(-1, lo - pad), Math.min(1, hi + pad)];
+	});
+	const yTicks = $derived(Array.from({ length: 5 }, (_, i) => yRange[0] + ((yRange[1] - yRange[0]) * i) / 4));
+	const sy = (v: number) => CY1 - ((v - yRange[0]) / (yRange[1] - yRange[0])) * (CY1 - CY0);
 </script>
 
 <svelte:head>
@@ -1123,9 +1132,9 @@
 		</div>
 		{#if series.length}
 			<svg viewBox="0 0 800 180" width="100%" style="margin-top: 0.6rem" aria-label={t('seriesAria')}>
-				{#each [-1, -0.5, 0, 0.5, 1] as t (t)}
+				{#each yTicks as t (t)}
 					<line x1={CX0} y1={sy(t)} x2={CX1} y2={sy(t)} stroke="#1c2950" />
-					<text x={CX0 - 6} y={sy(t) + 4} fill="#98a6cc" font-size="10" text-anchor="end">{t}</text>
+					<text x={CX0 - 6} y={sy(t) + 4} fill="#98a6cc" font-size="10" text-anchor="end">{+t.toFixed(2)}</text>
 				{/each}
 				<polyline
 					points={series.filter((s) => s.v !== null).map((s) => `${sx(series.indexOf(s), series.length)},${sy(s.v!)}`).join(' ')}
