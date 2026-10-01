@@ -113,6 +113,7 @@
 	let series = $state<{ item: StacItem; v: number | null }[]>([]);
 	let seriesLoading = $state(false);
 	let seriesIndex = $state('ndvi');
+	let seriesSource = $state<'items' | 'yearly'>('items');
 
 	// ---- 軌道 ----
 	let tleSet = $state<TleSet | null>(null);
@@ -546,10 +547,11 @@
 	}
 
 	async function buildSeries() {
-		if (!point || !items.length) return;
+		const src = seriesSource === 'yearly' ? yearly.flatMap((y) => (y.item ? [y.item] : [])) : items;
+		if (!point || !src.length) return;
 		seriesLoading = true;
 		const ix = indices.find((i) => i.id === seriesIndex)!;
-		const list = [...items].sort((a, b) => a.properties.datetime.localeCompare(b.properties.datetime)).slice(-20);
+		const list = [...src].sort((a, b) => a.properties.datetime.localeCompare(b.properties.datetime)).slice(-20);
 		const results = await Promise.all(
 			list.map(async (item) => {
 				const v = await pointValues(item, point!.lon, point!.lat, [ix.b1, ix.b2]);
@@ -1113,7 +1115,11 @@
 			<select bind:value={seriesIndex}>
 				{#each indices as ix (ix.id)}<option value={ix.id}>{L(ix.name)}</option>{/each}
 			</select>
-			<button onclick={buildSeries} disabled={!point || seriesLoading || !items.length}>{seriesLoading ? t('seriesBusy') : t('seriesBtn', Math.min(20, items.length))}</button>
+			<select bind:value={seriesSource} aria-label={t('seriesSourceAria')}>
+				<option value="items">{t('seriesSrcItems')}</option>
+				<option value="yearly">{t('seriesSrcYearly')}</option>
+			</select>
+			<button onclick={buildSeries} disabled={!point || seriesLoading || !(seriesSource === 'yearly' ? yearly.some((y) => y.item) : items.length)}>{seriesLoading ? t('seriesBusy') : t('seriesBtn', Math.min(20, seriesSource === 'yearly' ? yearly.filter((y) => y.item).length : items.length))}</button>
 		</div>
 		{#if series.length}
 			<svg viewBox="0 0 800 180" width="100%" style="margin-top: 0.6rem" aria-label={t('seriesAria')}>
@@ -1132,7 +1138,7 @@
 						</circle>
 					{/if}
 					{#if i % Math.ceil(series.length / 6) === 0 || i === series.length - 1}
-						<text x={sx(i, series.length)} y={CY1 + 22} fill="#98a6cc" font-size="10" text-anchor="middle">{fmtDate(s.item.properties.datetime).slice(5)}</text>
+						<text x={sx(i, series.length)} y={CY1 + 22} fill="#98a6cc" font-size="10" text-anchor="middle">{seriesSource === 'yearly' ? fmtDate(s.item.properties.datetime).slice(0, 7) : fmtDate(s.item.properties.datetime).slice(5)}</text>
 					{/if}
 				{/each}
 			</svg>
