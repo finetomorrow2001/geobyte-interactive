@@ -34,12 +34,15 @@
 		places,
 		assetsFor,
 		searchItems,
+		searchYearly,
+		seasons,
 		fetchItem,
 		pointValues,
 		normDiff,
 		fmtDate,
 		cogRequestCount,
 		type StacItem,
+		type YearlyScene,
 		type RenderMode
 	} from '$lib/imagery';
 	import { makeT, L } from '$lib/i18n/lang.svelte';
@@ -63,6 +66,10 @@
 	let loading = $state(false);
 	let error = $state('');
 	let items = $state<StacItem[]>([]);
+	let yearly = $state<YearlyScene[]>([]);
+	let seasonId = $state('summer');
+	let yearlyYears = $state(8);
+	let yearlyLoading = $state(false);
 
 	// ---- 表示 ----
 	let itemA = $state<StacItem | null>(null);
@@ -436,6 +443,23 @@
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function searchYear() {
+		yearlyLoading = true;
+		error = '';
+		try {
+			const c = mapA.getCenter();
+			const d = 0.02;
+			yearly = await searchYearly([c.lng - d, c.lat - d, c.lng + d, c.lat + d], seasons.find((x) => x.id === seasonId)!, yearlyYears, 60);
+			const first = yearly.find((y) => y.item)?.item;
+			if (first) selectA(first);
+			if (!first) error = t('searchNoScenes');
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			yearlyLoading = false;
 		}
 	}
 
@@ -943,6 +967,45 @@
 				</div>
 			{/each}
 		</div>
+	</div>
+	<div class="panel">
+		<h3>{t('yearlyTitle')} <span class="muted" style="font-weight: 400; font-size: 0.8rem">{t('yearlySub')}</span></h3>
+		<div class="control">
+			<label for="season">{L({ ja: '季節', en: 'Season' })}</label>
+			<select id="season" bind:value={seasonId}>
+				<option value="summer">{t('yearlySeasonSummer')}</option>
+				<option value="snow">{t('yearlySeasonSnow')}</option>
+				<option value="autumn">{t('yearlySeasonAutumn')}</option>
+			</select>
+		</div>
+		<div class="control">
+			<label for="yy">{t('yearlyYears')}</label>
+			<output>{yearlyYears}</output>
+			<input id="yy" type="range" min="2" max="9" step="1" bind:value={yearlyYears} />
+		</div>
+		<button onclick={searchYear} disabled={yearlyLoading}>{yearlyLoading ? t('searchBtnBusy') : t('yearlyBtn')}</button>
+		<p class="muted" style="font-size: 0.8rem; margin-top: 0.6rem">{t('yearlyHelp')}</p>
+		{#if yearly.length}
+			<div class="strip">
+				{#each yearly as y (y.year)}
+					{#if y.item}
+						{@const it = y.item}
+						<div class="scene" class:a={itemA?.id === it.id} class:b={itemB?.id === it.id}>
+							<button class="thumb" onclick={() => selectA(it)} title={it.id}>
+								{#if it.assets.thumbnail}<img src={it.assets.thumbnail.href} alt="" loading="lazy" />{/if}
+								<div class="cap">
+									<div>{fmtDate(it.properties.datetime)}</div>
+									<div class="muted">☁ {cloud(it)?.toFixed(0)}% · {satLabel(it).split(' ')[0]}</div>
+								</div>
+							</button>
+							<button class="bbtn" class:active={itemB?.id === it.id} onclick={() => selectB(it)}>B</button>
+						</div>
+					{:else}
+						<div class="scene"><div class="cap muted" style="padding: 0.5rem">{y.year}: {t('yearlyNone')}</div></div>
+					{/if}
+				{/each}
+			</div>
+		{/if}
 	</div>
 </div>
 
