@@ -14,7 +14,7 @@
 | 03 | `/resolution` | GSD／ビット深度スライダーで画像劣化を体感。GSD × スワス散布図、ミッション比較 |
 | 04 | `/stac` | STAC クエリビルダー。Earth Search（AWS）に実クエリを送りサムネイル表示。curl / Python コード生成 |
 | 05 | `/formats` | COG のタイルと Range Request、Zarr のチャンク設計、処理レベル（L0〜L2A/ARD）、光学 vs SAR |
-| 06 | `/imagery` | Sentinel-2 実画像を **MapLibre GL の 3D 地図**上でその場レンダリング。ブラウザが geotiff.js で COG を直接 Range Request し、再投影・バンド合成・指標計算を Web Worker で実行。2 時期比較（A ◀▶ B）、地点の DN と時系列。**実 TLE から SGP4 で計算した Sentinel-2A/2B/2C のリアルタイム位置・軌道直下・観測幅 290 km**、時刻スクラブ（画像は撮影時刻に同期）、次にその場所が撮影される日時の予測（STAC の 10 日回帰と照合） |
+| 06 | `/imagery` | Sentinel-2 実画像を **MapLibre GL の 3D 地図**上でその場レンダリング。ブラウザが geotiff.js で COG を直接 Range Request し、再投影・バンド合成・指標計算を Web Worker で実行。2 時期比較（A ◀▶ B）、同季節の**年次比較**（魚沼など、年ごとに最良シーンを選ぶ）、地点の DN と時系列（年次シーンの推移も可）。**実 TLE から SGP4 で計算した Sentinel-2A/2B/2C のリアルタイム位置・軌道直下・観測幅 290 km**、時刻スクラブ（画像は撮影時刻に同期）、次にその場所が撮影される日時の予測（STAC の 10 日回帰と照合） |
 
 ## 特徴
 

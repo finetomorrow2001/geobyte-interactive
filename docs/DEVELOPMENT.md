@@ -25,7 +25,7 @@ npx vite preview --port 4173 # 本番ビルドの動作確認
 | `src/lib/i18n/lang.svelte.ts` | 言語ストア `i18n.lang`、`makeT()`、`L()`、`term()`、`nf()` |
 | `src/lib/i18n/<page>.ts` | ページ辞書 `{ ja, en }` |
 | `src/lib/orbit.ts` / `spectral.ts` / `missions.ts` | 01–03 のデータと計算 |
-| `src/lib/imagery.ts` | 06: STAC 検索、合成・指標・場所の定義、COG Worker プール |
+| `src/lib/imagery.ts` | 06: STAC 検索（通常 / 年次 `searchYearly`・`seasons`）、合成・指標・場所の定義、COG Worker プール |
 | `src/lib/cog.ts` / `cog.worker.ts` | 06: COG 読み取り（geotiff.js）、UTM→WebMercator、合成 |
 | `src/lib/cog-protocol.ts` | 06: MapLibre カスタムプロトコル `cog://` |
 | `src/lib/s2orbit.ts` | 06: TLE 取得、SGP4、地上軌跡、観測幅、パス予測、太陽位置 |

@@ -66,6 +66,7 @@
 	let loading = $state(false);
 	let error = $state('');
 	let items = $state<StacItem[]>([]);
+	// 年次比較: 季節窓ごとに各年の最良シーンを 1 つずつ保持（searchYearly）。時系列グラフの対象にもなる
 	let yearly = $state<YearlyScene[]>([]);
 	let seasonId = $state('summer');
 	let yearlyYears = $state(8);
@@ -113,6 +114,7 @@
 	let series = $state<{ item: StacItem; v: number | null }[]>([]);
 	let seriesLoading = $state(false);
 	let seriesIndex = $state('ndvi');
+	/** 時系列グラフの対象: 検索結果（最新）か年次比較のシーン */
 	let seriesSource = $state<'items' | 'yearly'>('items');
 
 	// ---- 軌道 ----
@@ -447,6 +449,7 @@
 		}
 	}
 
+	/** 地図中心で年次シーンを検索し、最も古い年のシーンを A にする */
 	async function searchYear() {
 		yearlyLoading = true;
 		error = '';
