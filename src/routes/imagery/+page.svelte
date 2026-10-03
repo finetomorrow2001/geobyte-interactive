@@ -7,6 +7,7 @@
 	import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 	import type * as GeoJSON from 'geojson';
 	import Compass from '$lib/Compass.svelte';
+	import { searchAnnual, manualSelect, type AnnualScene } from '$lib/annual';
 	import { installCogProtocol, registerCogLayer, unregisterCogLayer, setTileListener } from '$lib/cog-protocol';
 	import {
 		SATS,
@@ -34,18 +35,15 @@
 		places,
 		assetsFor,
 		searchItems,
-		searchYearly,
-		seasons,
 		fetchItem,
 		pointValues,
 		normDiff,
 		fmtDate,
 		cogRequestCount,
 		type StacItem,
-		type YearlyScene,
 		type RenderMode
 	} from '$lib/imagery';
-	import { makeT, L } from '$lib/i18n/lang.svelte';
+	import { makeT, L, i18n } from '$lib/i18n/lang.svelte';
 	import { imagery as dict } from '$lib/i18n/imagery';
 
 	const t = makeT(dict);
@@ -67,8 +65,29 @@
 	let error = $state('');
 	let items = $state<StacItem[]>([]);
 	// 年次比較: 季節窓ごとに各年の最良シーンを 1 つずつ保持（searchYearly）。時系列グラフの対象にもなる
-	let yearly = $state<YearlyScene[]>([]);
-	let seasonId = $state('summer');
+	let yearly = $state<AnnualScene[]>([]);
+	let monthDay = $state('10-02');
+	let dateTolerance = $state(14);
+	let allowMissing = $state(false);
+	let yearlyCloud = $state(30);
+	let selectedArea = $state('');
+	let annualQuery = $state('');
+	let searchVersion = 0;
+	let annualVersion = 0;
+	let pointVersion = 0;
+	let seriesVersion = 0;
+	let layerVersion = 0;
+	let mapBGeneration = 0;
+	// タイル読込状態: B 側の読込中表示と、A/B 各レイヤーのタイル取得失敗数
+	let tilesLoadingB = $state(false);
+	let tileErr = $state({ a: 0, b: 0 });
+	const reasonText = (r: string) => t(`reason_${r}` as Parameters<typeof t>[0]);
+	let annualSnapshot = $state<object | null>(null);
+	// Public locality overview boxes only; no application boundaries or private map data.
+	const studyAreas = [
+		{ id: 'south', name: { ja: '夕張・南側', en: 'Yubari – South' }, detail: { ja: '紅葉山・沼ノ沢周辺', en: 'Around Momijiyama & Numanosawa' }, bbox: [141.975, 42.91, 142.09, 42.98] as [number,number,number,number] },
+		{ id: 'north', name: { ja: '夕張・北側', en: 'Yubari – North' }, detail: { ja: '南清水沢・鹿の谷周辺', en: 'Around Minami-Shimizusawa & Shikanotani' }, bbox: [141.915, 42.975, 142.055, 43.065] as [number,number,number,number] }
+	];
 	let yearlyYears = $state(8);
 	let yearlyLoading = $state(false);
 
@@ -218,6 +237,7 @@
 		mapA.on('dataloading', upd);
 		mapA.on('data', upd);
 		mapA.on('idle', upd);
+		mapA.on('error', (e) => { if ((e as { sourceId?: string }).sourceId === 'cog-a') tileErr.a++; });
 		initOverlays(mapA);
 
 		// TLE はマップと並行して取得
@@ -368,6 +388,7 @@
 		if (map.getSource(id)) map.removeSource(id);
 		if (cogKeys[slot]) unregisterCogLayer(cogKeys[slot]!);
 		delete cogKeys[slot];
+		tileErr[slot] = 0;
 		if (!item) return;
 		const m = $state.snapshot(mode);
 		const reg = registerCogLayer(item, m, gain);
@@ -400,10 +421,17 @@
 	async function ensureMapB(): Promise<MLMap> {
 		if (mapB) return mapB;
 		if (!mapBReady) {
+			const generation = mapBGeneration;
 			mapBReady = createMap(mapElB, mapA.getCenter(), mapA.getZoom()).then((m) => {
+				if (generation !== mapBGeneration) { m.remove(); throw new Error('Comparison map superseded'); }
 				m.jumpTo({ bearing: mapA.getBearing(), pitch: mapA.getPitch() });
 				m.on('click', (e) => queryPoint(e.lngLat.lat, e.lngLat.lng));
 				m.on('move', () => sync(m, mapA));
+				const updB = () => (tilesLoadingB = !m.areTilesLoaded());
+				m.on('dataloading', updB);
+				m.on('data', updB);
+				m.on('idle', updB);
+				m.on('error', (e) => { if ((e as { sourceId?: string }).sourceId === 'cog-b') tileErr.b++; });
 				mapB = m;
 				initOverlays(m);
 				return m;
@@ -413,6 +441,9 @@
 	}
 
 	function destroyMapB() {
+		++mapBGeneration;
+		tilesLoadingB = false;
+		tileErr.b = 0;
 		if (cogKeys.b) unregisterCogLayer(cogKeys.b);
 		delete cogKeys.b;
 		satMarkers.delete(mapB!);
@@ -422,10 +453,15 @@
 	}
 
 	async function refreshLayers() {
+		++layerVersion;
 		setCog(mapA, 'a', itemA);
 		if (itemB) {
-			const b = await ensureMapB();
-			setCog(b, 'b', itemB);
+			const version = ++layerVersion;
+			try {
+				const b = await ensureMapB();
+				if (version !== layerVersion || !itemB) return;
+				setCog(b, 'b', itemB);
+			} catch (e) { if (version === layerVersion) error = String(e); }
 		} else if (mapB) {
 			destroyMapB();
 		}
@@ -433,44 +469,103 @@
 
 	// ---- 検索・選択 ----
 	async function search() {
+		if (!mapA) return;
+		const version = ++searchVersion;
 		loading = true;
 		error = '';
 		try {
 			// 地図中心の小さな箱で検索すると、中心を覆うタイルだけが返る
 			const c = mapA.getCenter();
 			const d = 0.02;
-			items = await searchItems([c.lng - d, c.lat - d, c.lng + d, c.lat + d], days, maxCloud);
+			const found = await searchItems([c.lng - d, c.lat - d, c.lng + d, c.lat + d], days, maxCloud);
+			if (version !== searchVersion) return;
+			items = found;
+			if (seriesSource === 'items' && series.length && point) buildSeries();
 			if (items.length && !items.find((i) => i.id === itemA?.id)) selectA(items[0]);
 			if (!items.length) error = t('searchNoScenes');
 		} catch (e) {
+			if (version !== searchVersion) return;
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
-			loading = false;
+			if (version === searchVersion) loading = false;
 		}
 	}
 
 	/** 地図中心で年次シーンを検索し、最も古い年のシーンを A にする */
 	async function searchYear() {
+		if (!mapA) return;
+		const version = ++annualVersion;
+		++searchVersion;
+		loading = false;
+		++pointVersion; ++seriesVersion; pointLoading = false; seriesLoading = false;
+		const hadSeries = series.length > 0;
+		yearly = []; annualSnapshot = null; pointA = null; pointB = null; selectB(null); itemA = null; setCog(mapA, 'a', null); series = [];
 		yearlyLoading = true;
 		error = '';
 		try {
 			const c = mapA.getCenter();
 			const d = 0.02;
-			yearly = await searchYearly([c.lng - d, c.lat - d, c.lng + d, c.lat + d], seasons.find((x) => x.id === seasonId)!, yearlyYears, 60);
+			const area = studyAreas.find(a => a.id === selectedArea);
+			const bbox = area?.bbox ?? [c.lng-d,c.lat-d,c.lng+d,c.lat+d] as [number,number,number,number];
+			const description = t('annualQueryText', area ? t('annualQueryArea', L(area.name), L(area.detail)) : t('annualQueryCenter'), monthDay, dateTolerance, yearlyCloud, allowMissing);
+			const options = {monthDay,years:yearlyYears,maxCloud:yearlyCloud,tolerance:dateTolerance,allowMissing};
+			const found = await searchAnnual(bbox, options);
+			if (version !== annualVersion) return;
+			yearly = found; annualQuery = description; annualSnapshot = {area: area ? {id:area.id,name:area.name,detail:area.detail,bbox} : {bbox}, options, scope: t('annualScope'), quality: t('annualQuality')}; seriesSource = 'yearly';
 			const first = yearly.find((y) => y.item)?.item;
 			if (first) selectA(first);
+			if (hadSeries && point) buildSeries();
 			if (!first) error = t('searchNoScenes');
 		} catch (e) {
+			if (version !== annualVersion) return;
 			error = e instanceof Error ? e.message : String(e);
 		} finally {
-			yearlyLoading = false;
+			if (version === annualVersion) yearlyLoading = false;
 		}
 	}
 
 	function goto(p: (typeof places)[number]) {
+		if (!mapA) return;
+		resetStudy(); selectedArea = '';
 		mapA.jumpTo({ center: [p.center[1], p.center[0]], zoom: p.zoom });
 		itemB = null;
 		search();
+	}
+	function resetStudy() {
+		++annualVersion; ++searchVersion; ++pointVersion; ++seriesVersion; ++layerVersion;
+		pointLoading = false; seriesLoading = false; annualSnapshot = null;
+		yearlyLoading = false; loading = false; yearly = []; annualQuery = ''; items = []; series = [];
+		point = null; pointA = null; pointB = null; itemA = null; itemB = null;
+		error = '';
+		if (mapA) setCog(mapA, 'a', null);
+		destroyMapB();
+		forMaps(m => (m.getSource('point') as ML.GeoJSONSource)?.setData({type:'FeatureCollection',features:[]}));
+		forMaps(m => (m.getSource('footprint') as ML.GeoJSONSource)?.setData({type:'FeatureCollection',features:[]}));
+	}
+	function chooseArea(id: string) {
+		if (!mapA) return;
+		const area = studyAreas.find(a => a.id === id); if (!area) return;
+		resetStudy(); selectedArea = id;
+		const b = area.bbox;
+		mapA.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:36,duration:0});
+	}
+	function changeAnnualCandidate(year: number, id: string) {
+		const row = yearly.find(y => y.year === year);
+		const item = row?.alternatives?.find(i => i.id === id);
+		if (!row || !item) return;
+		const previous = row.item?.id;
+		const hadSeries = series.length > 0;
+		yearly = yearly.map(y => y.year === year ? manualSelect(y, item) : y);
+		++seriesVersion; seriesLoading = false; series = [];
+		if (itemB?.id === previous) selectB(item);
+		selectA(item);
+		// 年のシーンが入れ替わったので、時系列は新しいシーン集合で再計算する
+		if (hadSeries && point && seriesSource === 'yearly') buildSeries();
+	}
+
+	function exportAnnual() {
+		const blob = new Blob([JSON.stringify({...annualSnapshot,query:annualQuery,exportedAt:new Date().toISOString(),rows:yearly},null,2)],{type:'application/json'});
+		const url = URL.createObjectURL(blob), a=document.createElement('a'); a.href=url;a.download=`${selectedArea || 'map'}-annual-scenes.json`;a.click();URL.revokeObjectURL(url);
 	}
 
 	function selectA(item: StacItem, fromSync = false) {
@@ -483,7 +578,7 @@
 		}
 		forMaps((m) => setFootprint(m, item));
 		refreshLayers();
-		if (point) queryPoint(point.lat, point.lon);
+		if (point) refreshPoint();
 		// スクラブ中に手で選んだら、表示時刻もそのシーンの撮影時刻へ（衛星が真上に来る）
 		if (!fromSync && syncScene && timeOffsetMin !== 0) {
 			selectedPass = null;
@@ -509,7 +604,7 @@
 	function selectB(item: StacItem | null) {
 		itemB = item?.id === itemB?.id ? null : item;
 		refreshLayers();
-		if (point) queryPoint(point.lat, point.lon);
+		if (point) refreshPoint();
 	}
 
 	// mode / gain 変更でレイヤーを作り直す。依存を mode / gain だけに限定する（untrack しないと自分自身を再トリガーする）
@@ -535,34 +630,48 @@
 		(map.getSource('point') as ML.GeoJSONSource).setData({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lon, p.lat] }, properties: {} });
 	}
 
-	async function queryPoint(lat: number, lon: number) {
+	/** 地図クリック: 地点を変えるので時系列は破棄し、計算済みだった場合は新しい地点で再計算する */
+	function queryPoint(lat: number, lon: number) {
+		const hadSeries = series.length > 0;
+		++seriesVersion; seriesLoading = false; series = [];
 		point = { lat, lon };
 		forMaps((m) => setPointData(m, { lat, lon }));
-		if (!itemA) return;
+		refreshPoint();
+		if (hadSeries) buildSeries();
+	}
+
+	/** 同じ地点の A/B 値を取り直す（A/B の切替では時系列は消さない） */
+	async function refreshPoint() {
+		if (!point) return;
+		const { lat, lon } = point;
+		const version = ++pointVersion;
+		pointA = null; pointB = null;
+		const sceneA = itemA, sceneB = itemB;
+		if (!sceneA) { pointLoading = false; return; }
 		pointLoading = true;
-		const [a, b] = await Promise.all([
-			pointValues(itemA, lon, lat, pointAssets),
-			itemB ? pointValues(itemB, lon, lat, pointAssets) : Promise.resolve(null)
-		]);
-		pointA = a;
-		pointB = b;
-		pointLoading = false;
+		try {
+			const [a, b] = await Promise.all([pointValues(sceneA, lon, lat, pointAssets), sceneB ? pointValues(sceneB, lon, lat, pointAssets) : Promise.resolve(null)]);
+			if (version !== pointVersion) return;
+			pointA = a; pointB = b;
+		} catch (e) { if (version === pointVersion) error = String(e); }
+		finally { if (version === pointVersion) pointLoading = false; }
 	}
 
 	async function buildSeries() {
 		const src = seriesSource === 'yearly' ? yearly.flatMap((y) => (y.item ? [y.item] : [])) : items;
 		if (!point || !src.length) return;
-		seriesLoading = true;
+		const version = ++seriesVersion, location = {...point};
+		seriesLoading = true; series = [];
 		const ix = indices.find((i) => i.id === seriesIndex)!;
 		const list = [...src].sort((a, b) => a.properties.datetime.localeCompare(b.properties.datetime)).slice(-20);
-		const results = await Promise.all(
-			list.map(async (item) => {
-				const v = await pointValues(item, point!.lon, point!.lat, [ix.b1, ix.b2]);
+		try {
+			const results = await Promise.all(list.map(async (item) => {
+				const v = await pointValues(item, location.lon, location.lat, [ix.b1, ix.b2]);
 				return { item, v: normDiff(v[ix.b1], v[ix.b2]) };
-			})
-		);
-		series = results;
-		seriesLoading = false;
+			}));
+			if (version === seriesVersion) series = results;
+		} catch (e) { if (version === seriesVersion) error = String(e); }
+		finally { if (version === seriesVersion) seriesLoading = false; }
 	}
 
 	// ---- 軌道 ----
@@ -779,7 +888,20 @@
 	{t('lead1')}<strong>{t('leadStrong')}</strong>{t('lead2')}
 </p>
 
-<details class="panel tight howto" open>
+<section class="panel study-panel" aria-label={t('studyAria')}>
+	<h2>{t('studyTitle')}</h2>
+	<p>{t('studySteps')}</p>
+	<div class="btn-row">
+		{#each studyAreas as area (area.id)}
+			<button class:active={selectedArea === area.id} aria-pressed={selectedArea === area.id} onclick={() => chooseArea(area.id)}><strong>{L(area.name)}</strong><br /><small>{L(area.detail)}</small></button>
+		{/each}
+		<a href="#annual-controls">{t('studyGoto')}</a>
+	</div>
+	<p class="muted">{t('studyNote')}</p>
+	{#if selectedArea}<p aria-live="polite">{t('studyTarget', L(studyAreas.find(a => a.id === selectedArea)!.detail))}</p>{/if}
+</section>
+
+<details class="panel tight howto">
 	<summary><strong>{t('howtoTitle')}</strong>{t('howtoToggle')}</summary>
 	<ol>
 		<li>{@html t('howto1')}</li>
@@ -871,6 +993,12 @@
 		{/if}
 	</div>
 
+	{#if itemB && tilesLoadingB}
+		<div class="loading loadingB" style:left="calc({swipe}% + 12px)">{t('mapLoadingB')}</div>
+	{/if}
+	{#if tileErr.a || tileErr.b}
+		<div class="tile-error" role="alert">{#if tileErr.a}<div>{t('mapErrorA', tileErr.a)}</div>{/if}{#if tileErr.b}<div>{t('mapErrorB', tileErr.b)}</div>{/if}</div>
+	{/if}
 	{#if tilesLoading || loading}
 		<div class="loading">{loading ? t('mapLoadingStac') : t('mapLoadingTiles')}</div>
 	{/if}
@@ -982,24 +1110,32 @@
 			{/each}
 		</div>
 	</div>
-	<div class="panel">
-		<h3>{t('yearlyTitle')} <span class="muted" style="font-weight: 400; font-size: 0.8rem">{t('yearlySub')}</span></h3>
+	<div class="panel" id="annual-controls">
+		<h3>{t('annualTitle')}</h3>
+		<p class="muted">{t('annualIntro')}</p>
 		<div class="control">
-			<label for="season">{L({ ja: '季節', en: 'Season' })}</label>
-			<select id="season" bind:value={seasonId}>
-				<option value="summer">{t('yearlySeasonSummer')}</option>
-				<option value="snow">{t('yearlySeasonSnow')}</option>
-				<option value="autumn">{t('yearlySeasonAutumn')}</option>
-			</select>
+			<label for="annual-day">{t('annualDay')}</label>
+			<input id="annual-day" type="text" pattern="[0-9]{2}-[0-9]{2}" bind:value={monthDay} placeholder="10-02" />
 		</div>
+		<div class="control">
+			<label for="annual-cloud">{t('annualCloud')}</label>
+			<input id="annual-cloud" type="number" min="0" max="100" bind:value={yearlyCloud} />
+		</div>
+		<div class="control">
+			<label for="annual-tolerance">{t('annualTol')}</label>
+			<select id="annual-tolerance" bind:value={dateTolerance}>{#each [0, 7, 14, 30] as n (n)}<option value={n}>{t('annualTolOpt', n)}</option>{/each}</select>
+		</div>
+		<label><input type="checkbox" bind:checked={allowMissing} /> {t('annualAllow')}</label>
 		<div class="control">
 			<label for="yy">{t('yearlyYears')}</label>
 			<output>{yearlyYears}</output>
 			<input id="yy" type="range" min="2" max="9" step="1" bind:value={yearlyYears} />
 		</div>
 		<button onclick={searchYear} disabled={yearlyLoading}>{yearlyLoading ? t('searchBtnBusy') : t('yearlyBtn')}</button>
-		<p class="muted" style="font-size: 0.8rem; margin-top: 0.6rem">{t('yearlyHelp')}</p>
+		<p class="muted" style="font-size: 0.8rem; margin-top: 0.6rem">{t('annualHelp')}</p>
 		{#if yearly.length}
+			<p aria-live="polite">{annualQuery}</p>
+			<button class="ghost" onclick={exportAnnual}>{t('annualExport')}</button>
 			<div class="strip">
 				{#each yearly as y (y.year)}
 					{#if y.item}
@@ -1008,14 +1144,21 @@
 							<button class="thumb" onclick={() => selectA(it)} title={it.id}>
 								{#if it.assets.thumbnail}<img src={it.assets.thumbnail.href} alt="" loading="lazy" />{/if}
 								<div class="cap">
-									<div>{fmtDate(it.properties.datetime)}</div>
+									<div>{t('annualCardYear', y.year, fmtDate(it.properties.datetime))}</div>
+									<div>{t('annualCardBase', y.target, y.candidates)}</div>
+									<div>{reasonText(y.reason)} {y.offset ? `(${y.offset > 0 ? '+' : ''}${y.offset}${i18n.lang === 'ja' ? '日' : ' d'})` : ''}</div>
 									<div class="muted">☁ {cloud(it)?.toFixed(0)}% · {satLabel(it).split(' ')[0]}</div>
 								</div>
 							</button>
+							{#if (y.alternatives?.length ?? 0) > 1}
+								<select aria-label={t('annualAltAria', y.year)} value={it.id} onchange={(e) => changeAnnualCandidate(y.year,e.currentTarget.value)}>
+									{#each y.alternatives ?? [] as alt (alt.id)}<option value={alt.id}>{fmtDate(alt.properties.datetime)} · {t('mapLegendCloud', cloud(alt)?.toFixed(0))} · {alt.id.split('_')[1]}</option>{/each}
+								</select>
+							{/if}
 							<button class="bbtn" class:active={itemB?.id === it.id} onclick={() => selectB(it)}>B</button>
 						</div>
 					{:else}
-						<div class="scene"><div class="cap muted" style="padding: 0.5rem">{y.year}: {t('yearlyNone')}</div></div>
+						<div class="scene"><div class="cap muted" style="padding: 0.5rem">{y.target}: {reasonText(y.reason)}</div></div>
 					{/if}
 				{/each}
 			</div>
@@ -1123,11 +1266,12 @@
 
 	<div class="panel">
 		<h3>{t('seriesTitle')}</h3>
+		<p class="muted">{t('seriesRefNote')}</p>
 		<div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap">
-			<select bind:value={seriesIndex}>
+			<select bind:value={seriesIndex} onchange={() => series.length && buildSeries()}>
 				{#each indices as ix (ix.id)}<option value={ix.id}>{L(ix.name)}</option>{/each}
 			</select>
-			<select bind:value={seriesSource} aria-label={t('seriesSourceAria')}>
+			<select bind:value={seriesSource} onchange={() => series.length && buildSeries()} aria-label={t('seriesSourceAria')}>
 				<option value="items">{t('seriesSrcItems')}</option>
 				<option value="yearly">{t('seriesSrcYearly')}</option>
 			</select>
@@ -1247,6 +1391,11 @@
 </div>
 
 <style>
+	#annual-controls { grid-column: 1 / -1; min-width: 0; scroll-margin-top: 1rem; }
+	#annual-controls .control { max-width: 640px; }
+	#annual-controls .scene { width: 190px; }
+	#annual-controls .scene select { width: 100%; font-size: 0.75rem; }
+
 	.howto summary {
 		cursor: pointer;
 		font-size: 0.95rem;
@@ -1554,6 +1703,22 @@
 		padding: 0.25rem 0.7rem;
 		font-size: 0.8rem;
 		color: var(--accent-2);
+	}
+	.loadingB {
+		/* 境界線の右（B 側）に置く。右上の UI 列とは重ならない */
+		transform: none;
+	}
+	.tile-error {
+		position: absolute;
+		top: 10px;
+		left: 10px;
+		z-index: 8;
+		background: rgba(60, 12, 20, 0.9);
+		border: 1px solid var(--red);
+		border-radius: 6px;
+		padding: 0.25rem 0.7rem;
+		font-size: 0.8rem;
+		color: #ffb4b4;
 	}
 	.legend {
 		position: absolute;

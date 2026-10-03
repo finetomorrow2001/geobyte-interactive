@@ -234,47 +234,6 @@ export async function searchItems(
 	return (await res.json()).features as StacItem[];
 }
 
-export type Season = { id: string; from: [number, number]; to: [number, number] };
-
-/** 年次比較用の季節窓（[月, 日]）。同じ季節で揃えて年ごとの差を見る */
-export const seasons: Season[] = [
-	{ id: 'summer', from: [7, 15], to: [9, 15] },
-	{ id: 'snow', from: [2, 1], to: [3, 15] },
-	{ id: 'autumn', from: [10, 15], to: [11, 20] }
-];
-
-export type YearlyScene = { year: number; item: StacItem | null };
-
-/** 直近 years 年の各年について、季節窓内で最も雲の少ない 1 シーンを選ぶ（未来の窓は除外） */
-export async function searchYearly(bbox: [number, number, number, number], season: Season, years: number, maxCloud: number): Promise<YearlyScene[]> {
-	const now = new Date();
-	const pad = (n: number) => String(n).padStart(2, '0');
-	const ys: number[] = [];
-	for (let y = now.getUTCFullYear(); ys.length < years; y--) {
-		if (Date.parse(`${y}-${pad(season.from[0])}-${pad(season.from[1])}T00:00:00Z`) <= now.getTime() && y >= 2017) ys.push(y);
-		else if (y < 2017) break;
-	}
-	return Promise.all(
-		ys.reverse().map(async (year) => {
-			const res = await fetch(`${STAC_API}/search`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					collections: [COLLECTION],
-					bbox,
-					datetime: `${year}-${pad(season.from[0])}-${pad(season.from[1])}T00:00:00Z/${year}-${pad(season.to[0])}-${pad(season.to[1])}T23:59:59Z`,
-					query: { 'eo:cloud_cover': { lt: maxCloud } },
-					sortby: [{ field: 'properties.eo:cloud_cover', direction: 'asc' }],
-					limit: 1
-				})
-			});
-			if (!res.ok) throw new Error(`STAC ${res.status}`);
-			const f = (await res.json()).features as StacItem[];
-			return { year, item: f[0] ?? null };
-		})
-	);
-}
-
 export async function fetchItem(id: string): Promise<StacItem> {
 	const res = await fetch(itemUrl(id));
 	if (!res.ok) throw new Error(`Item ${id}: ${res.status}`);
