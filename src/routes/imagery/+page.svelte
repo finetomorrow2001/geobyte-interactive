@@ -81,6 +81,13 @@
 	// タイル読込状態: B 側の読込中表示と、A/B 各レイヤーのタイル取得失敗数
 	let tilesLoadingB = $state(false);
 	let tileErr = $state({ a: 0, b: 0 });
+	let tileMsg = $state({ a: '', b: '' });
+	const onTileError = (slot: 'a' | 'b') => (e: unknown) => {
+		const ev = e as { sourceId?: string; error?: Error };
+		if (ev.sourceId !== `cog-${slot}`) return;
+		tileErr[slot]++;
+		tileMsg[slot] = ev.error?.message ?? '';
+	};
 	const reasonText = (r: string) => t(`reason_${r}` as Parameters<typeof t>[0]);
 	let annualSnapshot = $state<object | null>(null);
 	// Public locality overview boxes only; no application boundaries or private map data.
@@ -237,7 +244,7 @@
 		mapA.on('dataloading', upd);
 		mapA.on('data', upd);
 		mapA.on('idle', upd);
-		mapA.on('error', (e) => { if ((e as { sourceId?: string }).sourceId === 'cog-a') tileErr.a++; });
+		mapA.on('error', onTileError('a'));
 		initOverlays(mapA);
 
 		// TLE はマップと並行して取得
@@ -389,6 +396,7 @@
 		if (cogKeys[slot]) unregisterCogLayer(cogKeys[slot]!);
 		delete cogKeys[slot];
 		tileErr[slot] = 0;
+		tileMsg[slot] = '';
 		if (!item) return;
 		const m = $state.snapshot(mode);
 		const reg = registerCogLayer(item, m, gain);
@@ -431,7 +439,7 @@
 				m.on('dataloading', updB);
 				m.on('data', updB);
 				m.on('idle', updB);
-				m.on('error', (e) => { if ((e as { sourceId?: string }).sourceId === 'cog-b') tileErr.b++; });
+				m.on('error', onTileError('b'));
 				mapB = m;
 				initOverlays(m);
 				return m;
@@ -444,6 +452,7 @@
 		++mapBGeneration;
 		tilesLoadingB = false;
 		tileErr.b = 0;
+		tileMsg.b = '';
 		if (cogKeys.b) unregisterCogLayer(cogKeys.b);
 		delete cogKeys.b;
 		satMarkers.delete(mapB!);
@@ -997,7 +1006,7 @@
 		<div class="loading loadingB" style:left="calc({swipe}% + 12px)">{t('mapLoadingB')}</div>
 	{/if}
 	{#if tileErr.a || tileErr.b}
-		<div class="tile-error" role="alert">{#if tileErr.a}<div>{t('mapErrorA', tileErr.a)}</div>{/if}{#if tileErr.b}<div>{t('mapErrorB', tileErr.b)}</div>{/if}</div>
+		<div class="tile-error" role="alert">{#if tileErr.a}<div>{t('mapErrorA', tileErr.a)}{tileMsg.a ? ` — ${tileMsg.a.slice(0, 120)}` : ''}</div>{/if}{#if tileErr.b}<div>{t('mapErrorB', tileErr.b)}{tileMsg.b ? ` — ${tileMsg.b.slice(0, 120)}` : ''}</div>{/if}</div>
 	{/if}
 	{#if tilesLoading || loading}
 		<div class="loading">{loading ? t('mapLoadingStac') : t('mapLoadingTiles')}</div>
