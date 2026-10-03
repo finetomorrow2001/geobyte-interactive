@@ -39,6 +39,7 @@
 		fetchItem,
 		pointValues,
 		indexFromDn,
+		offsetKnown,
 		regionStats,
 		fmtDate,
 		cogRequestCount,
@@ -1118,6 +1119,7 @@
 				<div><strong>B</strong> {fmtDate(itemB.properties.datetime)} <span class="muted">{satLabel(itemB)} · {t('mapLegendCloud', cloud(itemB)?.toFixed(0))}</span> <span class="muted">{t('mapLegendRight')}</span>{#if cover.b < 0.98} <span class="warn">{cover.b < 0.02 ? t('coverNone') : t('coverPartial', (cover.b * 100).toFixed(0))}</span>{/if}</div>
 			{/if}
 			{#if mode.kind === 'index'}<div class="muted">{t('maskNote')}</div>{/if}
+			{#if (!offsetKnown(itemA)) || (itemB && !offsetKnown(itemB))}<div class="warn">{t('offsetUnknown')}（{[!offsetKnown(itemA) ? 'A' : '', itemB && !offsetKnown(itemB) ? 'B' : ''].filter(Boolean).join('・')}）</div>{/if}
 		</div>
 	{/if}
 	{#if itemB}
@@ -1262,6 +1264,7 @@
 									<div>{t('annualCardBase', y.target, y.candidates)}</div>
 									<div>{reasonText(y.reason)} {y.offset ? `(${y.offset > 0 ? '+' : ''}${y.offset}${i18n.lang === 'ja' ? '日' : ' d'})` : ''}</div>
 									<div class="muted">☁ {cloud(it)?.toFixed(0)}% · {satLabel(it).split(' ')[0]}</div>
+									{#if !offsetKnown(it)}<div class="adj">{t('offsetUnknown')}</div>{/if}
 									{#if y.adjustedFrom}<div class="adj">{t('regionAdjFrom', y.adjustedFrom.date, (y.adjustedFrom.invalid * 100).toFixed(1))}</div>{/if}
 									{#if y.regionNote}<div class="adj">{t('regionNoAlt')}</div>{/if}
 									{#if regionStat[it.id]}
@@ -1368,6 +1371,7 @@
 					<tr><td>{t('pointSclRow')}</td><td class="num">{sclText(pointA)}</td>{#if itemB}<td class="num">{sclText(pointB)}</td>{/if}</tr>
 				</tbody>
 			</table>
+			{#if (pointA && !offsetKnown(pointA.item)) || (pointB && !offsetKnown(pointB.item))}<p class="muted" style="font-size: 0.78rem; color: #ffb86c">{t('offsetUnknownNote', [pointA && !offsetKnown(pointA.item) ? 'A' : '', itemB && pointB && !offsetKnown(pointB.item) ? 'B' : ''].filter(Boolean).join('・'))}</p>{/if}
 			{#if maskOf(pointA)}<p class="muted" style="font-size: 0.78rem; color: #ffb86c">{t('pointMaskedNote', 'A', maskText(maskOf(pointA)!))}</p>{/if}
 			{#if itemB && maskOf(pointB)}<p class="muted" style="font-size: 0.78rem; color: #ffb86c">{t('pointMaskedNote', 'B', maskText(maskOf(pointB)!))}</p>{/if}
 			<table style="margin-top: 0.6rem">
@@ -1420,8 +1424,8 @@
 							<title>{t('seriesMaskedTitle', fmtDate(s.item.properties.datetime), maskText(s.reason))}</title>
 						</circle>
 					{:else if s.v !== null}
-						<circle cx={sx(i, series.length)} cy={sy(s.v)} r="4" fill={cloud(s.item)! > 20 ? '#ffb86c' : '#50fa7b'}>
-							<title>{t('seriesPointTitle', fmtDate(s.item.properties.datetime), s.v.toFixed(3), cloud(s.item)?.toFixed(0))}</title>
+						<circle cx={sx(i, series.length)} cy={sy(s.v)} r="4" fill={cloud(s.item)! > 20 ? '#ffb86c' : '#50fa7b'} stroke={offsetKnown(s.item) ? 'none' : '#ff5555'} stroke-width="2">
+							<title>{t('seriesPointTitle', fmtDate(s.item.properties.datetime), s.v.toFixed(3), cloud(s.item)?.toFixed(0))}{offsetKnown(s.item) ? '' : ' · ' + t('offsetUnknown')}</title>
 						</circle>
 					{/if}
 					{#if i % Math.ceil(series.length / 6) === 0 || i === series.length - 1}
@@ -1429,7 +1433,7 @@
 					{/if}
 				{/each}
 			</svg>
-			<p class="muted" style="font-size: 0.78rem">{@html t('seriesNote')} {#if series.some((x) => x.reason)}{t('seriesMaskedLegend')}{/if}</p>
+			<p class="muted" style="font-size: 0.78rem">{@html t('seriesNote')} {#if series.some((x) => x.reason)}{t('seriesMaskedLegend')}{/if} {#if series.some((x) => !offsetKnown(x.item))}{t('offsetUnknownSeries')}{/if}</p>
 		{:else}
 			<p class="muted" style="font-size: 0.9rem">{t('seriesEmpty')}</p>
 		{/if}

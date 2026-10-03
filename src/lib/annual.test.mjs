@@ -72,6 +72,8 @@ test('reflectance offset follows Earth Search metadata and is never applied twic
  assert.equal(dnOffsetFor({'earthsearch:boa_offset_applied':false,'s2:processing_baseline':'02.14'}).offset,0);
  assert.equal(dnOffsetFor({'earthsearch:boa_offset_applied':false,'s2:processing_baseline':'04.00'}).offset,1000);
  assert.equal(dnOffsetFor({}).offset,0);
+ assert.equal(dnOffsetFor({}).known,false);assert.equal(dnOffsetFor({'s2:processing_baseline':'garbage'}).known,false);
+ for(const p of [{'earthsearch:boa_offset_applied':true},{'earthsearch:boa_offset_applied':false,'s2:processing_baseline':'02.14'},{'earthsearch:boa_offset_applied':false,'s2:processing_baseline':'04.00'}])assert.equal(dnOffsetFor(p).known,true);
  // NDVI: offset-applied DN (already reflectance*1e4) vs raw DN with +1000 give the same index once the offset is removed
  const applied=normDiffDn(3000,500,0),raw=normDiffDn(4000,1500,1000);
  assert.ok(Math.abs(applied-raw)<1e-12);

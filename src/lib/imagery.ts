@@ -258,6 +258,9 @@ export function regionStats(item: StacItem, bbox: [number, number, number, numbe
 }
 
 /** 指数（正規化差分）。DN は Earth Search の補正状態に合わせてオフセットを扱う（reflectance.ts） */
+/** このシーンの反射率補正状態が確認できているか（false なら「補正状態不明」と表示する） */
+export const offsetKnown = (item: StacItem) => dnOffsetFor(item.properties).known;
+
 export const indexFromDn = (item: StacItem, a: number | null, b: number | null) => normDiffDn(a, b, dnOffsetFor(item.properties).offset);
 
 export const normDiff = (a: number | null, b: number | null) =>

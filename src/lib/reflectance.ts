@@ -11,14 +11,15 @@
  *
  * 補正が必要（boa_offset_applied が true でなく、ベースライン ≥ 04.00）と判断できる場合のみ 1000 を返す。
  */
-export type DnOffset = { offset: number; basis: string };
+/** known: false のときは補正状態を判断できていない（補正なしとして計算するが、確認済みの値とは区別して表示する） */
+export type DnOffset = { offset: number; basis: string; known: boolean };
 
 export function dnOffsetFor(props: Record<string, unknown>): DnOffset {
-	if (props['earthsearch:boa_offset_applied'] === true) return { offset: 0, basis: 'earthsearch:boa_offset_applied=true（補正済み）' };
+	if (props['earthsearch:boa_offset_applied'] === true) return { offset: 0, basis: 'earthsearch:boa_offset_applied=true（補正済み）', known: true };
 	const pb = parseFloat(String(props['s2:processing_baseline'] ?? ''));
-	if (Number.isFinite(pb) && pb < 4) return { offset: 0, basis: `s2:processing_baseline=${pb.toFixed(2)} < 04.00（オフセットなし）` };
-	if (Number.isFinite(pb)) return { offset: 1000, basis: `s2:processing_baseline=${pb.toFixed(2)} ≥ 04.00 かつ未補正 → DN から 1000 を引く` };
-	return { offset: 0, basis: '判断材料なし（補正なしとして扱う）' };
+	if (Number.isFinite(pb) && pb < 4) return { offset: 0, basis: `s2:processing_baseline=${pb.toFixed(2)} < 04.00（オフセットなし）`, known: true };
+	if (Number.isFinite(pb)) return { offset: 1000, basis: `s2:processing_baseline=${pb.toFixed(2)} ≥ 04.00 かつ未補正 → DN から 1000 を引く`, known: true };
+	return { offset: 0, basis: '判断材料なし（補正なしとして扱う）', known: false };
 }
 
 /** DN → 反射率（0..1 目安）。offset は dnOffsetFor の値 */
