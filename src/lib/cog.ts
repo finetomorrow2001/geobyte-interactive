@@ -254,6 +254,46 @@ export async function sampleTile(href: string, epsg: number, z: number, x: numbe
 	return { bands: out };
 }
 
+/**
+ * lon/lat の bbox を n×n の格子（セル中心）で、フル解像度の 1 バンドを最近傍サンプリングする。
+ * 画像範囲外は 255。nodata(0) はそのまま 0（SCL の「欠測」）。内部タイルのキャッシュを共有する。
+ */
+export async function sampleGrid(href: string, epsg: number, bbox: [number, number, number, number], n: number): Promise<Uint8Array> {
+	const cog = await openCog(href);
+	const img = cog.images[0];
+	const W = img.getWidth(), H = img.getHeight(), tw = img.getTileWidth(), th = img.getTileHeight();
+	const out = new Uint8Array(n * n).fill(255);
+	const px = new Int32Array(n * n).fill(-1);
+	const py = new Int32Array(n * n).fill(-1);
+	let tx0 = Infinity, tx1 = -Infinity, ty0 = Infinity, ty1 = -Infinity;
+	for (let j = 0; j < n; j++) {
+		const lat = bbox[3] - ((j + 0.5) / n) * (bbox[3] - bbox[1]);
+		for (let i = 0; i < n; i++) {
+			const lon = bbox[0] + ((i + 0.5) / n) * (bbox[2] - bbox[0]);
+			const [E, N] = lonLatToUtm(lon, lat, epsg);
+			const cx = Math.floor((E - cog.originX) / cog.resX);
+			const cy = Math.floor((cog.originY - N) / cog.resY);
+			if (cx < 0 || cy < 0 || cx >= W || cy >= H) continue;
+			px[j * n + i] = cx;
+			py[j * n + i] = cy;
+			tx0 = Math.min(tx0, Math.floor(cx / tw)); tx1 = Math.max(tx1, Math.floor(cx / tw));
+			ty0 = Math.min(ty0, Math.floor(cy / th)); ty1 = Math.max(ty1, Math.floor(cy / th));
+		}
+	}
+	if (!Number.isFinite(tx0)) return out;
+	const tiles = new Map<string, Decoded>();
+	const jobs: Promise<void>[] = [];
+	for (let ty = ty0; ty <= ty1; ty++)
+		for (let tx = tx0; tx <= tx1; tx++) jobs.push(getInternalTile(cog, href, 0, tx, ty).then((d) => void tiles.set(`${tx}|${ty}`, d)));
+	await Promise.all(jobs);
+	for (let k = 0; k < n * n; k++) {
+		if (px[k] < 0) continue;
+		const t = tiles.get(`${Math.floor(px[k] / tw)}|${Math.floor(py[k] / th)}`)!;
+		out[k] = t.data[0][(py[k] - t.y0) * t.w + (px[k] - t.x0)];
+	}
+	return out;
+}
+
 /** 1 地点のフル解像度ピクセル値を読む */
 export async function samplePoint(href: string, epsg: number, lon: number, lat: number): Promise<number[] | null> {
 	const cog = await openCog(href);

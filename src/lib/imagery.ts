@@ -1,4 +1,6 @@
-import type { Job, TileJob, PointJob } from './cog.worker';
+import type { Job, TileJob, PointJob, StatsJob } from './cog.worker';
+import { dnOffsetFor, normDiffDn } from './reflectance';
+import type { SclSummary } from './scl';
 import type { LText } from './i18n/lang.svelte';
 
 export const STAC_API = 'https://earth-search.aws.element84.com/v1';
@@ -170,13 +172,13 @@ function getWorkers(): Worker[] {
 	const n = Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 	workers = Array.from({ length: n }, (_, i) => {
 		const w = new Worker(new URL('./cog.worker.ts', import.meta.url), { type: 'module' });
-		w.onmessage = (e: MessageEvent<{ id: number; rgba?: Uint8ClampedArray; values?: (number | null)[]; error?: string; requests: number }>) => {
+		w.onmessage = (e: MessageEvent<{ id: number; rgba?: Uint8ClampedArray; values?: (number | null)[]; stats?: SclSummary; error?: string; requests: number }>) => {
 			workerRequests[i] = e.data.requests;
 			const p = pending.get(e.data.id);
 			if (!p) return;
 			pending.delete(e.data.id);
 			if (e.data.error) p.reject(new Error(e.data.error));
-			else p.resolve(e.data.rgba ?? e.data.values);
+			else p.resolve(e.data.rgba ?? e.data.values ?? e.data.stats);
 		};
 		return w;
 	});
@@ -247,6 +249,16 @@ export async function pointValues(item: StacItem, lon: number, lat: number, asse
 	const vals = await submit<(number | null)[]>(job, 0);
 	return Object.fromEntries(assets.map((a, i) => [a, vals[i]]));
 }
+
+/** 地域（bbox）内の SCL 集計。格子 n×n を最近傍で数え、分母は格子点の総数 */
+export function regionStats(item: StacItem, bbox: [number, number, number, number], n = 150): Promise<SclSummary> {
+	if (!item.assets.scl) return Promise.reject(new Error('SCL asset がありません'));
+	const job: Omit<StatsJob, 'id'> = { kind: 'stats', epsg: epsgOf(item), href: item.assets.scl.href, bbox, n };
+	return submit<SclSummary>(job, (item.id.length * 7 + item.id.charCodeAt(item.id.length - 3)) >>> 0);
+}
+
+/** 指数（正規化差分）。DN は Earth Search の補正状態に合わせてオフセットを扱う（reflectance.ts） */
+export const indexFromDn = (item: StacItem, a: number | null, b: number | null) => normDiffDn(a, b, dnOffsetFor(item.properties).offset);
 
 export const normDiff = (a: number | null, b: number | null) =>
 	a === null || b === null || a + b === 0 ? null : (a - b) / (a + b);

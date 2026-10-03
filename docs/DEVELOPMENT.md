@@ -27,6 +27,9 @@ npx vite preview --port 4173 # 本番ビルドの動作確認
 | `src/lib/i18n/<page>.ts` | ページ辞書 `{ ja, en }` |
 | `src/lib/orbit.ts` / `spectral.ts` / `missions.ts` | 01–03 のデータと計算 |
 | `src/lib/imagery.ts` | 06: STAC 検索、合成・指標・場所の定義、COG Worker プール |
+| `src/lib/scl.ts` | 06: SCL の無効クラス定義・地域集計（点/時系列/指数画像/年カードで共通） |
+| `src/lib/reflectance.ts` | 06: 反射率のオフセット判定（二重補正の回避）と正規化差分 |
+| `scripts/scl-region-stats.mjs` / `docs/analysis/` | 地域内 SCL 集計の再現スクリプトと結果 |
 | `src/lib/annual.ts` / `annual.test.mjs` | 06: 年次比較の検索・選定（同月日優先、雲/欠測の代替、被覆判定、手動差し替え）とそのテスト |
 | `src/lib/cog.ts` / `cog.worker.ts` | 06: COG 読み取り（geotiff.js）、UTM→WebMercator、合成 |
 | `src/lib/cog-protocol.ts` | 06: MapLibre カスタムプロトコル `cog://` |

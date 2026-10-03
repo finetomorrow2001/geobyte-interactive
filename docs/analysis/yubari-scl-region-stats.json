@@ -1,0 +1,474 @@
+{
+ "generatedAt": "2026-10-03T16:38:04.978Z",
+ "definition": {
+  "grid": "150x150 cell centres over the lon/lat bbox, nearest neighbour on SCL (20 m, level 0)",
+  "denominator": "all grid points (including outside-image=255 and SCL 0)",
+  "invalidClasses": [
+   0,
+   1,
+   3,
+   8,
+   9,
+   10,
+   11
+  ],
+  "cloud": "classes 8 + 9",
+  "validKeepsDarkAndUnclassified": "classes 2 and 7 stay valid"
+ },
+ "bboxes": {
+  "south": [
+   141.975,
+   42.91,
+   142.09,
+   42.98
+  ],
+  "north": [
+   141.915,
+   42.975,
+   142.055,
+   43.065
+  ]
+ },
+ "scenes": [
+  {
+   "id": "S2B_54TWN_20190930_1_L2A",
+   "date": "2019-09-30",
+   "sceneCloudCover": 8.384056,
+   "processingBaseline": "05.00",
+   "dnOffset": {
+    "offset": 0,
+    "basis": "earthsearch:boa_offset_applied=true（補正済み）"
+   },
+   "regions": {
+    "south": {
+     "total": 22500,
+     "valid": 19662,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 1613,
+     "cloud": 1225,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 0,
+     "unclassified": 63,
+     "invalidPercent": 12.61
+    },
+    "north": {
+     "total": 22500,
+     "valid": 15340,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 3493,
+     "cloud": 3666,
+     "cirrus": 0,
+     "snow": 1,
+     "dark": 9,
+     "unclassified": 203,
+     "invalidPercent": 31.82
+    }
+   }
+  },
+  {
+   "id": "S2B_54TWN_20190930_0_L2A",
+   "date": "2019-09-30",
+   "sceneCloudCover": 6.431917,
+   "processingBaseline": "02.13",
+   "dnOffset": {
+    "offset": 0,
+    "basis": "s2:processing_baseline=2.13 < 04.00（オフセットなし）"
+   },
+   "regions": {
+    "south": {
+     "total": 22500,
+     "valid": 21120,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 620,
+     "cloud": 760,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 176,
+     "unclassified": 524,
+     "invalidPercent": 6.13
+    },
+    "north": {
+     "total": 22500,
+     "valid": 19029,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 1085,
+     "cloud": 2385,
+     "cirrus": 0,
+     "snow": 1,
+     "dark": 114,
+     "unclassified": 904,
+     "invalidPercent": 15.43
+    }
+   }
+  },
+  {
+   "id": "S2A_54TWN_20200929_0_L2A",
+   "date": "2020-09-29",
+   "sceneCloudCover": 1.585635,
+   "processingBaseline": "02.14",
+   "dnOffset": {
+    "offset": 0,
+    "basis": "s2:processing_baseline=2.14 < 04.00（オフセットなし）"
+   },
+   "regions": {
+    "south": {
+     "total": 22500,
+     "valid": 22178,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 141,
+     "cloud": 181,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 151,
+     "unclassified": 298,
+     "invalidPercent": 1.43
+    },
+    "north": {
+     "total": 22500,
+     "valid": 22192,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 200,
+     "cloud": 107,
+     "cirrus": 0,
+     "snow": 1,
+     "dark": 102,
+     "unclassified": 215,
+     "invalidPercent": 1.37
+    }
+   }
+  },
+  {
+   "id": "S2A_54TWN_20200929_1_L2A",
+   "date": "2020-09-29",
+   "sceneCloudCover": 2.337968,
+   "processingBaseline": "05.00",
+   "dnOffset": {
+    "offset": 0,
+    "basis": "earthsearch:boa_offset_applied=true（補正済み）"
+   },
+   "regions": {
+    "south": {
+     "total": 22500,
+     "valid": 21304,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 902,
+     "cloud": 294,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 5,
+     "unclassified": 145,
+     "invalidPercent": 5.32
+    },
+    "north": {
+     "total": 22500,
+     "valid": 21494,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 810,
+     "cloud": 195,
+     "cirrus": 0,
+     "snow": 1,
+     "dark": 10,
+     "unclassified": 62,
+     "invalidPercent": 4.47
+    }
+   }
+  },
+  {
+   "id": "S2B_54TWN_20211009_0_L2A",
+   "date": "2021-10-09",
+   "sceneCloudCover": 5.612732,
+   "processingBaseline": "03.01",
+   "dnOffset": {
+    "offset": 0,
+    "basis": "s2:processing_baseline=3.01 < 04.00（オフセットなし）"
+   },
+   "regions": {
+    "south": {
+     "total": 22500,
+     "valid": 16758,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 1519,
+     "cloud": 3490,
+     "cirrus": 722,
+     "snow": 11,
+     "dark": 177,
+     "unclassified": 801,
+     "invalidPercent": 25.52
+    },
+    "north": {
+     "total": 22500,
+     "valid": 15848,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 2300,
+     "cloud": 3789,
+     "cirrus": 563,
+     "snow": 0,
+     "dark": 184,
+     "unclassified": 868,
+     "invalidPercent": 29.56
+    }
+   }
+  },
+  {
+   "id": "S2B_54TWN_20211009_1_L2A",
+   "date": "2021-10-09",
+   "sceneCloudCover": 8.351216,
+   "processingBaseline": "05.00",
+   "dnOffset": {
+    "offset": 0,
+    "basis": "earthsearch:boa_offset_applied=true（補正済み）"
+   },
+   "regions": {
+    "south": {
+     "total": 22500,
+     "valid": 12964,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 3156,
+     "cloud": 5326,
+     "cirrus": 1054,
+     "snow": 0,
+     "dark": 19,
+     "unclassified": 65,
+     "invalidPercent": 42.38
+    },
+    "north": {
+     "total": 22500,
+     "valid": 11827,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 4203,
+     "cloud": 5865,
+     "cirrus": 605,
+     "snow": 0,
+     "dark": 14,
+     "unclassified": 57,
+     "invalidPercent": 47.44
+    }
+   }
+  },
+  {
+   "id": "S2A_54TWN_20221009_0_L2A",
+   "date": "2022-10-09",
+   "sceneCloudCover": 9.91625,
+   "processingBaseline": "04.00",
+   "dnOffset": {
+    "offset": 0,
+    "basis": "earthsearch:boa_offset_applied=true（補正済み）"
+   },
+   "regions": {
+    "south": {
+     "total": 22500,
+     "valid": 22500,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 0,
+     "cloud": 0,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 0,
+     "unclassified": 0,
+     "invalidPercent": 0
+    },
+    "north": {
+     "total": 22500,
+     "valid": 22498,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 0,
+     "cloud": 0,
+     "cirrus": 0,
+     "snow": 2,
+     "dark": 0,
+     "unclassified": 0,
+     "invalidPercent": 0.01
+    }
+   }
+  },
+  {
+   "id": "S2A_54TWN_20230924_0_L2A",
+   "date": "2023-09-24",
+   "sceneCloudCover": 0.955332,
+   "processingBaseline": "05.09",
+   "dnOffset": {
+    "offset": 0,
+    "basis": "earthsearch:boa_offset_applied=true（補正済み）"
+   },
+   "regions": {
+    "south": {
+     "total": 22500,
+     "valid": 22500,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 0,
+     "cloud": 0,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 74,
+     "unclassified": 55,
+     "invalidPercent": 0
+    },
+    "north": {
+     "total": 22500,
+     "valid": 22500,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 0,
+     "cloud": 0,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 51,
+     "unclassified": 35,
+     "invalidPercent": 0
+    }
+   }
+  },
+  {
+   "id": "S2A_54TWN_20240928_0_L2A",
+   "date": "2024-09-28",
+   "sceneCloudCover": 16.996267,
+   "processingBaseline": "05.11",
+   "dnOffset": {
+    "offset": 0,
+    "basis": "earthsearch:boa_offset_applied=true（補正済み）"
+   },
+   "regions": {
+    "south": {
+     "total": 22500,
+     "valid": 19092,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 735,
+     "cloud": 2673,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 8,
+     "unclassified": 115,
+     "invalidPercent": 15.15
+    },
+    "north": {
+     "total": 22500,
+     "valid": 20840,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 904,
+     "cloud": 756,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 1,
+     "unclassified": 42,
+     "invalidPercent": 7.38
+    }
+   }
+  },
+  {
+   "id": "S2C_54TWN_20251003_0_L2A",
+   "date": "2025-10-03",
+   "sceneCloudCover": 0.471282,
+   "processingBaseline": "05.11",
+   "dnOffset": {
+    "offset": 0,
+    "basis": "earthsearch:boa_offset_applied=true（補正済み）"
+   },
+   "regions": {
+    "south": {
+     "total": 22500,
+     "valid": 22500,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 0,
+     "cloud": 0,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 16,
+     "unclassified": 0,
+     "invalidPercent": 0
+    },
+    "north": {
+     "total": 22500,
+     "valid": 22500,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 0,
+     "cloud": 0,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 21,
+     "unclassified": 0,
+     "invalidPercent": 0
+    }
+   }
+  },
+  {
+   "id": "S2B_54TWN_20260923_0_L2A",
+   "date": "2026-09-23",
+   "sceneCloudCover": 0.311001,
+   "processingBaseline": "05.13",
+   "dnOffset": {
+    "offset": 0,
+    "basis": "earthsearch:boa_offset_applied=true（補正済み）"
+   },
+   "regions": {
+    "south": {
+     "total": 22500,
+     "valid": 22500,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 0,
+     "cloud": 0,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 114,
+     "unclassified": 30,
+     "invalidPercent": 0
+    },
+    "north": {
+     "total": 22500,
+     "valid": 22500,
+     "outside": 0,
+     "nodata": 0,
+     "saturated": 0,
+     "shadow": 0,
+     "cloud": 0,
+     "cirrus": 0,
+     "snow": 0,
+     "dark": 76,
+     "unclassified": 28,
+     "invalidPercent": 0
+    }
+   }
+  }
+ ]
+}

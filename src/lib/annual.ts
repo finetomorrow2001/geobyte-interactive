@@ -1,7 +1,12 @@
 import type { StacItem } from './imagery';
+import { invalidShare, type SclSummary } from './scl.ts';
 
 export type AnnualOptions = { monthDay: string; years: number; maxCloud: number; tolerance: number; allowMissing: boolean; now?: Date };
-export type AnnualScene = { year: number; target: string; item: StacItem | null; offset: number | null; reason: string; candidates: number; alternatives?: StacItem[] };
+export type AnnualScene = { year: number; target: string; item: StacItem | null; offset: number | null; reason: string; candidates: number; alternatives?: StacItem[];
+ /** 地域内の無効画素率で自動的に差し替えたとき、変更前の撮影日と地域内無効率（0..1） */
+ adjustedFrom?: { date: string; invalid: number };
+ /** 'no-clear-alternative': 地域内の無効画素率が閾値を超えるが、条件を満たす代替がない */
+ regionNote?: 'no-clear-alternative' };
 const DAY = 86400000;
 const date = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 export function targetTime(year: number, monthDay: string): number {
@@ -56,7 +61,7 @@ export async function searchAnnual(bbox: [number,number,number,number], options:
  }
  return results.reverse();
 }
-function inRing(x:number,y:number,ring:number[][]):boolean {
+export function inRing(x:number,y:number,ring:number[][]):boolean {
  let inside=false;
  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
   const [xi,yi]=ring[i], [xj,yj]=ring[j];
@@ -69,8 +74,36 @@ export function coversBox(item:StacItem,b:[number,number,number,number]):boolean
  const rings=item.geometry.coordinates;
  return [[b[0],b[1]],[b[2],b[1]],[b[2],b[3]],[b[0],b[3]],[(b[0]+b[2])/2,(b[1]+b[3])/2]].every(([x,y])=>inRing(x,y,rings[0])&&!rings.slice(1).some(r=>inRing(x,y,r)));
 }
+/** シーンの輪郭（外周・穴）に点が入るか */
+export function inFootprint(item: StacItem, lon: number, lat: number): boolean {
+ if(item.geometry.type!=='Polygon')return false;
+ const rings=item.geometry.coordinates;
+ return inRing(lon,lat,rings[0])&&!rings.slice(1).some(r=>inRing(lon,lat,r));
+}
+const dayOf=(i: StacItem)=>Date.parse(i.properties.datetime.slice(0,10)+'T00:00:00Z');
+/**
+ * 地域内の無効画素率（SCL）で採用日を再選定する。採用中のシーンの無効率が maxInvalid（0..1）以下ならそのまま。
+ * 超える場合は、集計済みの候補（採用中＋alternatives）のうち閾値以下で基準日に最も近いもの（同距離なら無効率が低いもの）に
+ * 差し替え、理由 'region-adjusted' と変更前の撮影日・無効率を残す。条件を満たす候補がなければ変更せず regionNote を付ける。
+ * 集計が無いシーンは判断せず（未集計）そのまま。
+ */
+export function reselectByRegion(row: AnnualScene, stats: Record<string, SclSummary>, maxInvalid: number): AnnualScene {
+ const cur=row.item; if(!cur)return row;
+ const share=(i: StacItem)=>stats[i.id]?invalidShare(stats[i.id]):undefined;
+ const curShare=share(cur);
+ if(curShare===undefined||curShare<=maxInvalid)return {...row,regionNote:undefined};
+ const t=Date.parse(row.target+'T00:00:00Z');
+ const seen=new Set<string>();
+ const pool=[cur,...(row.alternatives??[])].filter(i=>!seen.has(i.id)&&!!seen.add(i.id));
+ const ok=pool.filter(i=>{const v=share(i);return v!==undefined&&v<=maxInvalid;})
+  .sort((a,b)=>Math.abs(dayOf(a)-t)-Math.abs(dayOf(b)-t)||share(a)!-share(b)!||a.id.localeCompare(b.id));
+ if(!ok.length)return {...row,regionNote:'no-clear-alternative'};
+ const item=ok[0];
+ return {...row,item,offset:Math.round((dayOf(item)-t)/DAY),reason:'region-adjusted',regionNote:undefined,adjustedFrom:{date:cur.properties.datetime.slice(0,10),invalid:curShare}};
+}
+
 /** 年カードの候補を手動で差し替えた行を返す。同じ月日の画像に戻した場合は理由も「同じ月日 (exact)」に戻す */
 export function manualSelect(row: AnnualScene, item: StacItem): AnnualScene {
  const offset=Math.round((Date.parse(item.properties.datetime.slice(0,10)+'T00:00:00Z')-Date.parse(row.target+'T00:00:00Z'))/DAY);
- return {...row,item,offset,reason:offset===0?'exact':'manual-quality-adjusted'};
+ return {...row,item,offset,reason:offset===0?'exact':'manual-quality-adjusted',adjustedFrom:undefined,regionNote:undefined};
 }

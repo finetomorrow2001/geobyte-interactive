@@ -2,7 +2,8 @@
  * COG の取得・デコード・再投影・合成をメインスレッドから切り離す Worker。
  * メッセージ: { id, kind: 'tile', ... } → { id, rgba } / { id, kind: 'point', ... } → { id, values }
  */
-import { sampleTile, samplePoint, colormap } from './cog';
+import { sampleTile, samplePoint, sampleGrid, colormap } from './cog';
+import { SCL_INVALID_LUT, summarizeScl, type SclSummary } from './scl';
 
 // この Worker が発行した HTTP リクエスト数（教材用の表示に使う）
 let requests = 0;
@@ -28,14 +29,24 @@ export type TileJob = {
 	gain: number;
 	/** index のみ */
 	cmap?: string;
+	/** index のみ。SCL の COG。指定すると雲・雲影・巻雲・雪・欠測の画素を透過（欠測扱い）にする */
+	sclHref?: string;
+	/** index のみ。DN から引くオフセット（reflectance.ts の dnOffsetFor）。補正済みなら 0 */
+	dnOffset?: number;
 };
 export type PointJob = { id: number; kind: 'point'; epsg: number; lon: number; lat: number; hrefs: string[] };
-export type Job = TileJob | PointJob;
+/** 地域内の SCL 集計（bbox を n×n 格子で最近傍サンプリング） */
+export type StatsJob = { id: number; kind: 'stats'; epsg: number; href: string; bbox: [number, number, number, number]; n: number };
+export type Job = TileJob | PointJob | StatsJob;
 
 async function renderTile(job: TileJob): Promise<Uint8ClampedArray<ArrayBuffer>> {
 	const { epsg, z, x, y, size, gain } = job;
 	const rgba = new Uint8ClampedArray(new ArrayBuffer(size * size * 4));
-	const tiles = await Promise.all(job.hrefs.map((h) => sampleTile(h, epsg, z, x, y, size)));
+	const [tiles, scl] = await Promise.all([
+		Promise.all(job.hrefs.map((h) => sampleTile(h, epsg, z, x, y, size))),
+		// 指数画像だけ SCL を読む（真色・合成は雲を見せるためマスクしない）。SCL の 20 m は最近傍で対応付ける
+		job.mode === 'index' && job.sclHref ? sampleTile(job.sclHref, epsg, z, x, y, size) : Promise.resolve(null)
+	]);
 
 	if (job.mode === 'composite') {
 		const chans = job.hrefs.length === 1 ? tiles[0].bands.slice(0, 3) : tiles.map((t) => t.bands[0]);
@@ -58,9 +69,16 @@ async function renderTile(job: TileJob): Promise<Uint8ClampedArray<ArrayBuffer>>
 			lut[i * 3 + 1] = g;
 			lut[i * 3 + 2] = bl;
 		}
+		const off = job.dnOffset ?? 0;
+		const sc = scl?.bands[0];
 		for (let k = 0; k < size * size; k++) {
-			const va = a[k], vb = b[k];
-			if (va !== va || vb !== vb || va + vb === 0) continue;
+			// 無効画素は 0 ではなく透過（欠測）。SCL が NaN（範囲外・nodata）も無効
+			if (sc) {
+				const c = sc[k];
+				if (c !== c || SCL_INVALID_LUT[c] === 1) continue;
+			}
+			const va = a[k] - off, vb = b[k] - off;
+			if (va !== va || vb !== vb || va + vb <= 0) continue;
 			const v = (va - vb) / (va + vb);
 			const i = Math.max(0, Math.min(255, Math.round(((v + 1) / 2) * 255))) * 3;
 			rgba[k * 4] = lut[i];
@@ -78,6 +96,10 @@ self.onmessage = async (e: MessageEvent<Job>) => {
 		if (job.kind === 'tile') {
 			const rgba = await renderTile(job);
 			(self as unknown as Worker).postMessage({ id: job.id, rgba, requests }, [rgba.buffer]);
+		} else if (job.kind === 'stats') {
+			const grid = await sampleGrid(job.href, job.epsg, job.bbox, job.n);
+			const stats: SclSummary = summarizeScl(grid);
+			(self as unknown as Worker).postMessage({ id: job.id, stats, requests });
 		} else {
 			const values = await Promise.all(
 				job.hrefs.map(async (h) => {

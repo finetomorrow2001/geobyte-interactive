@@ -7,7 +7,8 @@
 	import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 	import type * as GeoJSON from 'geojson';
 	import Compass from '$lib/Compass.svelte';
-	import { searchAnnual, manualSelect, type AnnualScene } from '$lib/annual';
+	import { searchAnnual, manualSelect, reselectByRegion, inFootprint, type AnnualScene } from '$lib/annual';
+	import { sclReason, invalidShare, SCL_INVALID_CLASSES, type SclSummary, type SclReason } from '$lib/scl';
 	import { installCogProtocol, registerCogLayer, unregisterCogLayer, setTileListener } from '$lib/cog-protocol';
 	import {
 		SATS,
@@ -37,7 +38,8 @@
 		searchItems,
 		fetchItem,
 		pointValues,
-		normDiff,
+		indexFromDn,
+		regionStats,
 		fmtDate,
 		cogRequestCount,
 		type StacItem,
@@ -80,6 +82,23 @@
 	let mapBGeneration = 0;
 	// タイル読込状態: B 側の読込中表示と、A/B 各レイヤーのタイル取得失敗数
 	let tilesLoadingB = $state(false);
+	// 表示範囲のうち、A/B のシーン輪郭に入っている割合（7×7 の格子で判定）。外れていれば「画像範囲外」を示す
+	let cover = $state({ a: 1, b: 1 });
+	function coverOf(item: StacItem | null, m: MLMap | null): number {
+		if (!item || !m) return 1;
+		const bd = m.getBounds();
+		let inside = 0;
+		const N = 7;
+		for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+			const lon = bd.getWest() + ((i + 0.5) / N) * (bd.getEast() - bd.getWest());
+			const lat = bd.getSouth() + ((j + 0.5) / N) * (bd.getNorth() - bd.getSouth());
+			if (inFootprint(item, lon, lat)) inside++;
+		}
+		return inside / (N * N);
+	}
+	function updateCover() {
+		cover = { a: coverOf(itemA, mapA ?? null), b: coverOf(itemB, mapA ?? null) };
+	}
 	let tileErr = $state({ a: 0, b: 0 });
 	let tileMsg = $state({ a: '', b: '' });
 	const onTileError = (slot: 'a' | 'b') => (e: unknown) => {
@@ -95,6 +114,13 @@
 		{ id: 'south', name: { ja: '夕張・南側', en: 'Yubari – South' }, detail: { ja: '紅葉山・沼ノ沢周辺', en: 'Around Momijiyama & Numanosawa' }, bbox: [141.975, 42.91, 142.09, 42.98] as [number,number,number,number] },
 		{ id: 'north', name: { ja: '夕張・北側', en: 'Yubari – North' }, detail: { ja: '南清水沢・鹿の谷周辺', en: 'Around Minami-Shimizusawa & Shikanotani' }, bbox: [141.915, 42.975, 142.055, 43.065] as [number,number,number,number] }
 	];
+	// 年カードの地域内 SCL 集計（シーン ID → 集計）。分母・除外クラスは scl.ts を参照
+	let regionStat = $state<Record<string, SclSummary>>({});
+	let regionErr = $state<Record<string, string>>({});
+	let regionBusy = $state(false);
+	let annualBbox = $state<[number, number, number, number] | null>(null);
+	let maxInvalidPct = $state(20);
+	const REGION_GRID = 150;
 	let yearlyYears = $state(8);
 	let yearlyLoading = $state(false);
 
@@ -131,13 +157,15 @@
 
 	// ---- 地点クエリ ----
 	let point = $state<{ lat: number; lon: number } | null>(null);
-	let pointA = $state<Record<string, number | null> | null>(null);
-	let pointB = $state<Record<string, number | null> | null>(null);
+	/** 1 地点の読み取り結果。scl: undefined = SCL アセットなし（マスクできない）、null = 欠測/取得不可 */
+	type PointRead = { item: StacItem; vals: Record<string, number | null>; scl: number | null | undefined };
+	let pointA = $state<PointRead | null>(null);
+	let pointB = $state<PointRead | null>(null);
 	let pointLoading = $state(false);
 	const pointAssets = ['blue', 'green', 'red', 'nir', 'nir08', 'swir16', 'swir22'];
 
 	// ---- 時系列 ----
-	let series = $state<{ item: StacItem; v: number | null }[]>([]);
+	let series = $state<{ item: StacItem; v: number | null; reason: SclReason | null }[]>([]);
 	let seriesLoading = $state(false);
 	let seriesIndex = $state('ndvi');
 	/** 時系列グラフの対象: 検索結果（最新）か年次比較のシーン */
@@ -240,6 +268,7 @@
 		mapA.on('pitch', () => (pitch = mapA.getPitch()));
 		mapA.on('move', () => mapB && sync(mapA, mapB));
 		mapA.on('moveend', schedulePasses);
+		mapA.on('moveend', updateCover);
 		const upd = () => (tilesLoading = !mapA.areTilesLoaded());
 		mapA.on('dataloading', upd);
 		mapA.on('data', upd);
@@ -463,6 +492,7 @@
 
 	async function refreshLayers() {
 		++layerVersion;
+		updateCover();
 		setCog(mapA, 'a', itemA);
 		if (itemB) {
 			const version = ++layerVersion;
@@ -508,6 +538,7 @@
 		loading = false;
 		++pointVersion; ++seriesVersion; pointLoading = false; seriesLoading = false;
 		const hadSeries = series.length > 0;
+		regionStat = {}; regionErr = {}; regionBusy = false;
 		yearly = []; annualSnapshot = null; pointA = null; pointB = null; selectB(null); itemA = null; setCog(mapA, 'a', null); series = [];
 		yearlyLoading = true;
 		error = '';
@@ -520,10 +551,11 @@
 			const options = {monthDay,years:yearlyYears,maxCloud:yearlyCloud,tolerance:dateTolerance,allowMissing};
 			const found = await searchAnnual(bbox, options);
 			if (version !== annualVersion) return;
-			yearly = found; annualQuery = description; annualSnapshot = {area: area ? {id:area.id,name:area.name,detail:area.detail,bbox} : {bbox}, options, scope: t('annualScope'), quality: t('annualQuality')}; seriesSource = 'yearly';
+			annualBbox = bbox; yearly = found; annualQuery = description; annualSnapshot = {area: area ? {id:area.id,name:area.name,detail:area.detail,bbox} : {bbox}, options, scope: t('annualScope'), quality: t('annualQuality')}; seriesSource = 'yearly';
 			const first = yearly.find((y) => y.item)?.item;
 			if (first) selectA(first);
 			if (hadSeries && point) buildSeries();
+			loadRegionStats(yearly.flatMap((y) => (y.item ? [y.item] : [])), version);
 			if (!first) error = t('searchNoScenes');
 		} catch (e) {
 			if (version !== annualVersion) return;
@@ -540,10 +572,58 @@
 		itemB = null;
 		search();
 	}
+	/** 地域内集計を並列数を制限して取得。検索が変わったら捨てる（annualVersion で判定） */
+	async function loadRegionStats(list: StacItem[], version: number, concurrency = 4) {
+		// $state のプロキシは postMessage で複製できないので素の配列にする
+		const bbox = annualBbox ? ([...annualBbox] as [number, number, number, number]) : null;
+		if (!bbox) return;
+		const queue = list.filter((i) => !regionStat[i.id] && i.assets.scl);
+		for (const i of list) if (!i.assets.scl) regionErr[i.id] = t('regionNoScl');
+		const worker = async () => {
+			for (let it = queue.shift(); it; it = queue.shift()) {
+				try {
+					const st = await regionStats(it, bbox, REGION_GRID);
+					if (version === annualVersion) regionStat[it.id] = st;
+				} catch (e) {
+					if (version === annualVersion) regionErr[it.id] = e instanceof Error ? e.message : String(e);
+				}
+			}
+		};
+		await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, worker));
+	}
+
+	/** 採用中のシーンが閾値を超える年だけ候補を集計し、基準日に最も近い閾値以下の候補へ差し替える */
+	async function reselectByRegionClick() {
+		if (regionBusy || !yearly.length) return;
+		const version = annualVersion;
+		regionBusy = true;
+		try {
+			const max = Math.max(0, Math.min(100, maxInvalidPct)) / 100;
+			const over = yearly.filter((y) => y.item && regionStat[y.item.id] && invalidShare(regionStat[y.item.id]) > max);
+			await loadRegionStats(over.flatMap((y) => y.alternatives ?? []), version);
+			if (version !== annualVersion) return;
+			const hadSeries = series.length > 0;
+			const before = new Map(yearly.map((y) => [y.year, y.item]));
+			yearly = yearly.map((y) => reselectByRegion(y, regionStat, max));
+			for (const y of yearly) {
+				const prev = before.get(y.year);
+				if (!y.item || !prev || prev.id === y.item.id) continue;
+				if (itemB?.id === prev.id) selectB(y.item);
+				if (itemA?.id === prev.id) selectA(y.item);
+			}
+			++seriesVersion; seriesLoading = false; series = [];
+			if (hadSeries && point && seriesSource === 'yearly') buildSeries();
+		} finally {
+			if (version === annualVersion) regionBusy = false;
+		}
+	}
+	const pct = (n: number, total: number, d = 1) => ((100 * n) / (total || 1)).toFixed(d);
+
 	function resetStudy() {
 		++annualVersion; ++searchVersion; ++pointVersion; ++seriesVersion; ++layerVersion;
 		pointLoading = false; seriesLoading = false; annualSnapshot = null;
 		yearlyLoading = false; loading = false; yearly = []; annualQuery = ''; items = []; series = [];
+		regionStat = {}; regionErr = {}; regionBusy = false; annualBbox = null;
 		point = null; pointA = null; pointB = null; itemA = null; itemB = null;
 		error = '';
 		if (mapA) setCog(mapA, 'a', null);
@@ -565,6 +645,7 @@
 		const previous = row.item?.id;
 		const hadSeries = series.length > 0;
 		yearly = yearly.map(y => y.year === year ? manualSelect(y, item) : y);
+		loadRegionStats([item], annualVersion);
 		++seriesVersion; seriesLoading = false; series = [];
 		if (itemB?.id === previous) selectB(item);
 		selectA(item);
@@ -573,7 +654,7 @@
 	}
 
 	function exportAnnual() {
-		const blob = new Blob([JSON.stringify({...annualSnapshot,query:annualQuery,exportedAt:new Date().toISOString(),rows:yearly},null,2)],{type:'application/json'});
+		const blob = new Blob([JSON.stringify({...annualSnapshot,query:annualQuery,exportedAt:new Date().toISOString(),regionStats:{definition:t('regionDef', REGION_GRID),grid:REGION_GRID,invalidClasses:[...SCL_INVALID_CLASSES],byScene:regionStat},rows:yearly},null,2)],{type:'application/json'});
 		const url = URL.createObjectURL(blob), a=document.createElement('a'); a.href=url;a.download=`${selectedArea || 'map'}-annual-scenes.json`;a.click();URL.revokeObjectURL(url);
 	}
 
@@ -649,6 +730,15 @@
 		if (hadSeries) buildSeries();
 	}
 
+	/** 指定バンド + SCL を 1 地点で読む。SCL アセットが無いシーンは scl: undefined（マスク不可） */
+	async function readPoint(item: StacItem, lon: number, lat: number, assets: string[]): Promise<PointRead> {
+		const hasScl = !!item.assets.scl;
+		const vals = await pointValues(item, lon, lat, hasScl ? [...assets, 'scl'] : assets);
+		return { item, vals, scl: hasScl ? vals.scl : undefined };
+	}
+	const maskOf = (r: PointRead | null): SclReason | null => (r && r.scl !== undefined ? sclReason(r.scl) : null);
+	const maskText = (r: SclReason) => t(`mask_${r}` as Parameters<typeof t>[0]);
+
 	/** 同じ地点の A/B 値を取り直す（A/B の切替では時系列は消さない） */
 	async function refreshPoint() {
 		if (!point) return;
@@ -659,7 +749,7 @@
 		if (!sceneA) { pointLoading = false; return; }
 		pointLoading = true;
 		try {
-			const [a, b] = await Promise.all([pointValues(sceneA, lon, lat, pointAssets), sceneB ? pointValues(sceneB, lon, lat, pointAssets) : Promise.resolve(null)]);
+			const [a, b] = await Promise.all([readPoint(sceneA, lon, lat, pointAssets), sceneB ? readPoint(sceneB, lon, lat, pointAssets) : Promise.resolve(null)]);
 			if (version !== pointVersion) return;
 			pointA = a; pointB = b;
 		} catch (e) { if (version === pointVersion) error = String(e); }
@@ -675,8 +765,10 @@
 		const list = [...src].sort((a, b) => a.properties.datetime.localeCompare(b.properties.datetime)).slice(-20);
 		try {
 			const results = await Promise.all(list.map(async (item) => {
-				const v = await pointValues(item, location.lon, location.lat, [ix.b1, ix.b2]);
-				return { item, v: normDiff(v[ix.b1], v[ix.b2]) };
+				const r = await readPoint(item, location.lon, location.lat, [ix.b1, ix.b2]);
+				const reason = maskOf(r);
+				// 無効画素は 0 にせず欠測（null）。点・時系列・指数画像で同じ SCL 判定を使う
+				return { item, v: reason ? null : indexFromDn(item, r.vals[ix.b1], r.vals[ix.b2]), reason };
 			}));
 			if (version === seriesVersion) series = results;
 		} catch (e) { if (version === seriesVersion) error = String(e); }
@@ -868,8 +960,13 @@
 	const tleAgeH = $derived(tleSet ? (Date.now() - Math.max(...tleSet.tles.map((t) => t.epoch.getTime()))) / 3600000 : 0);
 	const satMeta = (id: SatId) => SATS.find((s) => s.id === id)!;
 
-	const indexAt = (vals: Record<string, number | null> | null, ix: (typeof indices)[number]) =>
-		vals ? normDiff(vals[ix.b1], vals[ix.b2]) : null;
+	const indexAt = (r: PointRead | null, ix: (typeof indices)[number]) => (r && !maskOf(r) ? indexFromDn(r.item, r.vals[ix.b1], r.vals[ix.b2]) : null);
+	const sclText = (r: PointRead | null) => {
+		if (!r || r.scl === undefined) return '—';
+		if (r.scl === null) return `0 ${t('mask_nodata')}`;
+		const m = sclReason(r.scl);
+		return `${r.scl} ${m ? maskText(m) : t(`sclClass_${r.scl}` as Parameters<typeof t>[0])}`;
+	};
 	const fmt = (v: number | null, d = 2) => (v === null ? '—' : v.toFixed(d));
 	const cloud = (it: StacItem) => it.properties['eo:cloud_cover'];
 
@@ -1016,10 +1113,11 @@
 			<div class="switched">{t('mapTimeSwitched', switched.date, switched.sat)}</div>
 		{/if}
 		<div class="legend" class:flash={!!switched}>
-			<div><strong>A</strong> {fmtDate(itemA.properties.datetime)} <span class="muted">{satLabel(itemA)} · {t('mapLegendCloud', cloud(itemA)?.toFixed(0))}</span></div>
+			<div><strong>A</strong> {fmtDate(itemA.properties.datetime)} <span class="muted">{satLabel(itemA)} · {t('mapLegendCloud', cloud(itemA)?.toFixed(0))}</span>{#if cover.a < 0.98} <span class="warn">{cover.a < 0.02 ? t('coverNone') : t('coverPartial', (cover.a * 100).toFixed(0))}</span>{/if}</div>
 			{#if itemB}
-				<div><strong>B</strong> {fmtDate(itemB.properties.datetime)} <span class="muted">{satLabel(itemB)} · {t('mapLegendCloud', cloud(itemB)?.toFixed(0))}</span> <span class="muted">{t('mapLegendRight')}</span></div>
+				<div><strong>B</strong> {fmtDate(itemB.properties.datetime)} <span class="muted">{satLabel(itemB)} · {t('mapLegendCloud', cloud(itemB)?.toFixed(0))}</span> <span class="muted">{t('mapLegendRight')}</span>{#if cover.b < 0.98} <span class="warn">{cover.b < 0.02 ? t('coverNone') : t('coverPartial', (cover.b * 100).toFixed(0))}</span>{/if}</div>
 			{/if}
+			{#if mode.kind === 'index'}<div class="muted">{t('maskNote')}</div>{/if}
 		</div>
 	{/if}
 	{#if itemB}
@@ -1144,6 +1242,13 @@
 		<p class="muted" style="font-size: 0.8rem; margin-top: 0.6rem">{t('annualHelp')}</p>
 		{#if yearly.length}
 			<p aria-live="polite">{annualQuery}</p>
+			<div class="control">
+				<label for="region-max">{t('regionMaxLabel')}</label>
+				<input id="region-max" type="number" min="0" max="100" bind:value={maxInvalidPct} />
+			</div>
+			<button class="ghost" onclick={reselectByRegionClick} disabled={regionBusy}>{regionBusy ? t('regionBtnBusy') : t('regionBtn')}</button>
+			<p class="muted" style="font-size: 0.78rem">{t('regionHelp')}</p>
+			<p class="muted" style="font-size: 0.78rem">{t('regionDef', REGION_GRID)}</p>
 			<button class="ghost" onclick={exportAnnual}>{t('annualExport')}</button>
 			<div class="strip">
 				{#each yearly as y (y.year)}
@@ -1157,11 +1262,21 @@
 									<div>{t('annualCardBase', y.target, y.candidates)}</div>
 									<div>{reasonText(y.reason)} {y.offset ? `(${y.offset > 0 ? '+' : ''}${y.offset}${i18n.lang === 'ja' ? '日' : ' d'})` : ''}</div>
 									<div class="muted">☁ {cloud(it)?.toFixed(0)}% · {satLabel(it).split(' ')[0]}</div>
+									{#if y.adjustedFrom}<div class="adj">{t('regionAdjFrom', y.adjustedFrom.date, (y.adjustedFrom.invalid * 100).toFixed(1))}</div>{/if}
+									{#if y.regionNote}<div class="adj">{t('regionNoAlt')}</div>{/if}
+									{#if regionStat[it.id]}
+										{@const st = regionStat[it.id]}
+										<div class="region" title={t('regionDef', REGION_GRID)}>{t('regionLine', pct(st.valid, st.total), pct(st.cloud, st.total), pct(st.shadow, st.total), pct(st.cirrus, st.total), pct(st.snow, st.total), pct(st.nodata + st.saturated + st.outside, st.total))}</div>
+									{:else if regionErr[it.id]}
+										<div class="region err">{t('regionError', regionErr[it.id])}</div>
+									{:else if annualBbox}
+										<div class="region muted">{t('regionLoading')}</div>
+									{/if}
 								</div>
 							</button>
 							{#if (y.alternatives?.length ?? 0) > 1}
 								<select aria-label={t('annualAltAria', y.year)} value={it.id} onchange={(e) => changeAnnualCandidate(y.year,e.currentTarget.value)}>
-									{#each y.alternatives ?? [] as alt (alt.id)}<option value={alt.id}>{fmtDate(alt.properties.datetime)} · {t('mapLegendCloud', cloud(alt)?.toFixed(0))} · {alt.id.split('_')[1]}</option>{/each}
+									{#each y.alternatives ?? [] as alt (alt.id)}<option value={alt.id}>{fmtDate(alt.properties.datetime)} · {t('mapLegendCloud', cloud(alt)?.toFixed(0))}{regionStat[alt.id] ? ` · ${pct(regionStat[alt.id].valid, regionStat[alt.id].total, 0)}%` : ''} · {alt.id.split('_')[1]}</option>{/each}
 								</select>
 							{/if}
 							<button class="bbtn" class:active={itemB?.id === it.id} onclick={() => selectB(it)}>B</button>
@@ -1248,10 +1363,13 @@
 				<thead><tr><th>{t('pointThAsset')}</th><th class="num">A (DN)</th>{#if itemB}<th class="num">B (DN)</th>{/if}</tr></thead>
 				<tbody>
 					{#each pointAssets as a (a)}
-						<tr><td><code>{a}</code></td><td class="num">{pointA?.[a] ?? '—'}</td>{#if itemB}<td class="num">{pointB?.[a] ?? '—'}</td>{/if}</tr>
+						<tr><td><code>{a}</code></td><td class="num">{pointA?.vals[a] ?? '—'}</td>{#if itemB}<td class="num">{pointB?.vals[a] ?? '—'}</td>{/if}</tr>
 					{/each}
+					<tr><td>{t('pointSclRow')}</td><td class="num">{sclText(pointA)}</td>{#if itemB}<td class="num">{sclText(pointB)}</td>{/if}</tr>
 				</tbody>
 			</table>
+			{#if maskOf(pointA)}<p class="muted" style="font-size: 0.78rem; color: #ffb86c">{t('pointMaskedNote', 'A', maskText(maskOf(pointA)!))}</p>{/if}
+			{#if itemB && maskOf(pointB)}<p class="muted" style="font-size: 0.78rem; color: #ffb86c">{t('pointMaskedNote', 'B', maskText(maskOf(pointB)!))}</p>{/if}
 			<table style="margin-top: 0.6rem">
 				<thead><tr><th>{t('pointThIndex')}</th><th class="num">A</th>{#if itemB}<th class="num">B</th><th class="num">B − A</th>{/if}</tr></thead>
 				<tbody>
@@ -1260,9 +1378,9 @@
 						{@const vb = indexAt(pointB, ix)}
 						<tr>
 							<td>{ix.id.toUpperCase()}</td>
-							<td class="num">{fmt(va)}</td>
+							<td class="num" title={maskOf(pointA) ? maskText(maskOf(pointA)!) : undefined}>{maskOf(pointA) ? t('pointMissing') : fmt(va)}</td>
 							{#if itemB}
-								<td class="num">{fmt(vb)}</td>
+								<td class="num" title={maskOf(pointB) ? maskText(maskOf(pointB)!) : undefined}>{maskOf(pointB) ? t('pointMissing') : fmt(vb)}</td>
 								<td class="num" style:color={va !== null && vb !== null ? (vb - va > 0.05 ? 'var(--green)' : vb - va < -0.05 ? 'var(--red)' : 'var(--text)') : undefined}>{va !== null && vb !== null ? (vb - va >= 0 ? '+' : '') + (vb - va).toFixed(2) : '—'}</td>
 							{/if}
 						</tr>
@@ -1297,7 +1415,11 @@
 					fill="none" stroke="#50fa7b" stroke-width="2"
 				/>
 				{#each series as s, i (s.item.id)}
-					{#if s.v !== null}
+					{#if s.reason}
+						<circle cx={sx(i, series.length)} cy={CY1} r="4" fill="none" stroke="#8b93a7" stroke-width="1.5">
+							<title>{t('seriesMaskedTitle', fmtDate(s.item.properties.datetime), maskText(s.reason))}</title>
+						</circle>
+					{:else if s.v !== null}
 						<circle cx={sx(i, series.length)} cy={sy(s.v)} r="4" fill={cloud(s.item)! > 20 ? '#ffb86c' : '#50fa7b'}>
 							<title>{t('seriesPointTitle', fmtDate(s.item.properties.datetime), s.v.toFixed(3), cloud(s.item)?.toFixed(0))}</title>
 						</circle>
@@ -1307,7 +1429,7 @@
 					{/if}
 				{/each}
 			</svg>
-			<p class="muted" style="font-size: 0.78rem">{@html t('seriesNote')}</p>
+			<p class="muted" style="font-size: 0.78rem">{@html t('seriesNote')} {#if series.some((x) => x.reason)}{t('seriesMaskedLegend')}{/if}</p>
 		{:else}
 			<p class="muted" style="font-size: 0.9rem">{t('seriesEmpty')}</p>
 		{/if}
@@ -1713,6 +1835,10 @@
 		font-size: 0.8rem;
 		color: var(--accent-2);
 	}
+	.warn { color: #ffb86c; }
+	.region { font-size: 0.7rem; line-height: 1.3; margin-top: 0.15rem; white-space: normal; }
+	.region.err { color: #ffb4b4; }
+	.adj { font-size: 0.7rem; color: #ffb86c; white-space: normal; }
 	.loadingB {
 		/* 境界線の右（B 側）に置く。右上の UI 列とは重ならない */
 		transform: none;
