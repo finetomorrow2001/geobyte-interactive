@@ -1029,6 +1029,10 @@
 	{#each places as p (p.id)}
 		<button class="ghost" onclick={() => goto(p)} title={L(p.hint)}>{L(p.name)}</button>
 	{/each}
+	<!-- 夕張の南北: 地域を選択して概略範囲へ移動（年次比較はこの範囲を対象にする） -->
+	{#each studyAreas as area (area.id)}
+		<button class="ghost" class:active={selectedArea === area.id} aria-pressed={selectedArea === area.id} onclick={() => chooseArea(area.id)} title={L(area.detail)}>{L(area.name)}</button>
+	{/each}
 </div>
 
 <svelte:document onfullscreenchange={onFullscreenChange} />
