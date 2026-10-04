@@ -525,6 +525,7 @@
 
 	// ---- 検索・選択 ----
 	async function search() {
+		animationPlaying = false;
 		if (!mapA) return;
 		const version = ++searchVersion;
 		loading = true;
@@ -549,6 +550,7 @@
 
 	/** 地図中心で年次シーンを検索し、最も古い年のシーンを A にする */
 	async function searchYear() {
+		animationPlaying = false;
 		if (!mapA) return;
 		const version = ++annualVersion;
 		++searchVersion;
@@ -637,6 +639,7 @@
 	const pct = (n: number, total: number, d = 1) => ((100 * n) / (total || 1)).toFixed(d);
 
 	function resetStudy() {
+		animationPlaying = false;
 		++annualVersion; ++searchVersion; ++pointVersion; ++seriesVersion; ++layerVersion;
 		pointLoading = false; seriesLoading = false; annualSnapshot = null;
 		yearlyLoading = false; loading = false; yearly = []; annualQuery = ''; items = []; series = [];
@@ -675,7 +678,46 @@
 		const url = URL.createObjectURL(blob), a=document.createElement('a'); a.href=url;a.download=`${selectedArea || 'map'}-annual-scenes.json`;a.click();URL.revokeObjectURL(url);
 	}
 
-	function selectA(item: StacItem, fromSync = false) {
+	let animationPlaying = $state(false);
+	let animationSeconds = $state(2);
+	let animationSource = $state<'annual' | 'search'>('annual');
+	let animationLoop = $state(true);
+	const animationFrames = $derived((animationSource === 'annual' ? yearly.flatMap(row => row.item ? [row.item] : []) : [...items]).sort((a, b) => Date.parse(a.properties.datetime) - Date.parse(b.properties.datetime)));
+	const animationIndex = $derived(animationFrames.findIndex(frame => frame.id === itemA?.id));
+	function showAnimationFrame(index: number) {
+		const frame = animationFrames[index];
+		if (!frame) return;
+		playing = false;
+		syncScene = false;
+		if (itemB) selectB(null);
+		selectA(frame, false, true);
+	}
+	function toggleAnimation() {
+		if (animationPlaying) { animationPlaying = false; return; }
+		if (animationFrames.length < 2) return;
+		showAnimationFrame(animationIndex < 0 || animationIndex === animationFrames.length - 1 ? 0 : animationIndex);
+		animationPlaying = true;
+	}
+	$effect(() => {
+		if (!animationPlaying) return;
+		if (animationFrames.length < 2 || animationIndex < 0 || tileProgress.a.failed || tileErr.a) {
+			animationPlaying = false;
+			return;
+		}
+		if (!imageLoaded.a || tileProgress.a.pending || tilesLoading) return;
+		const current = animationIndex;
+		const seconds = animationSeconds;
+		const loop = animationLoop;
+		const count = animationFrames.length;
+		const timer = setTimeout(() => {
+			if (current + 1 >= count && !loop) { animationPlaying = false; return; }
+			untrack(() => showAnimationFrame((current + 1) % count));
+		}, seconds * 1000);
+		return () => clearTimeout(timer);
+	});
+
+	function selectA(item: StacItem, fromSync = false, fromAnimation = false) {
+		if (!fromAnimation) animationPlaying = false;
 		if (itemA?.id === item.id) return;
 		itemA = item;
 		if (fromSync) {
@@ -709,6 +751,7 @@
 	}
 
 	function selectB(item: StacItem | null) {
+		animationPlaying = false;
 		itemB = item?.id === itemB?.id ? null : item;
 		refreshLayers();
 		if (point) refreshPoint();
@@ -1183,6 +1226,21 @@
 {#if error}
 	<div class="note warn">{error}</div>
 {/if}
+
+<section class="panel" aria-label={t('animationTitle')}>
+	<h2>{t('animationTitle')}</h2>
+	<p class="muted">{t('animationHelp')}</p>
+	<div class="btn-row">
+		<label>{t('animationSource')} <select bind:value={animationSource} onchange={() => animationPlaying = false}><option value="annual">{t('annualTitle')}</option><option value="search">{t('searchTitle')}</option></select></label>
+		<button onclick={toggleAnimation} disabled={animationFrames.length < 2}>{animationPlaying ? t('animationPause') : t('animationPlay')}</button>
+		<label>{t('animationSpeed')} <select bind:value={animationSeconds}>{#each [1, 2, 3, 5] as seconds}<option value={seconds}>{seconds} s</option>{/each}</select></label>
+		<label><input type="checkbox" bind:checked={animationLoop} /> {t('animationLoop')}</label>
+	</div>
+	{#if animationFrames.length}
+		<label for="animation-frame">{t('animationFrame')} {animationIndex >= 0 ? `${animationIndex + 1} / ${animationFrames.length} · ${fmtDate(animationFrames[animationIndex].properties.datetime)}` : '—'}</label>
+		<input id="animation-frame" type="range" min="0" max={animationFrames.length - 1} step="1" value={Math.max(0, animationIndex)} oninput={(e) => { animationPlaying = false; showAnimationFrame(+e.currentTarget.value); }} />
+	{:else}<p>{t('animationEmpty')}</p>{/if}
+</section>
 
 <div class="grid cols-2">
 	<div class="panel">
