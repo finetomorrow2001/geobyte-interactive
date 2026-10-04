@@ -999,9 +999,6 @@
 	<h2>{t('studyTitle')}</h2>
 	<p>{t('studySteps')}</p>
 	<div class="btn-row">
-		{#each studyAreas as area (area.id)}
-			<button class:active={selectedArea === area.id} aria-pressed={selectedArea === area.id} onclick={() => chooseArea(area.id)}><strong>{L(area.name)}</strong><br /><small>{L(area.detail)}</small></button>
-		{/each}
 		<a href="#annual-controls">{t('studyGoto')}</a>
 	</div>
 	<p class="muted">{t('studyNote')}</p>
