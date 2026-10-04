@@ -1844,8 +1844,9 @@
 	.region.err { color: #ffb4b4; }
 	.adj { font-size: 0.7rem; color: #ffb86c; white-space: normal; }
 	.loadingB {
-		/* 境界線の右（B 側）に置く。右上の UI 列とは重ならない */
+		/* 境界線の右（B 側）に置く。中央の「タイル読込中…」とは段をずらして重ならないようにする */
 		transform: none;
+		top: 44px;
 	}
 	.tile-error {
 		position: absolute;
