@@ -9,7 +9,7 @@
 	import Compass from '$lib/Compass.svelte';
 	import { searchAnnual, manualSelect, reselectByRegion, inFootprint, type AnnualScene } from '$lib/annual';
 	import { sclReason, invalidShare, SCL_INVALID_CLASSES, type SclSummary, type SclReason } from '$lib/scl';
-	import { installCogProtocol, registerCogLayer, unregisterCogLayer, setTileListener } from '$lib/cog-protocol';
+	import { installCogProtocol, registerCogLayer, unregisterCogLayer, setTileListener, type TileProgress } from '$lib/cog-protocol';
 	import {
 		SATS,
 		HALF_SWATH_KM,
@@ -99,6 +99,18 @@
 	}
 	function updateCover() {
 		cover = { a: coverOf(itemA, mapA ?? null), b: coverOf(itemB, mapA ?? null) };
+	}
+	const blankProgress = (): TileProgress => ({ pending: 0, completed: 0, empty: 0, failed: 0 });
+	let tileProgress = $state({ a: blankProgress(), b: blankProgress() });
+	let imageZoom = $state({ a: 0, b: 0 });
+	let imageOutside = $state({ a: false, b: false });
+	let imageLoaded = $state({ a: false, b: false });
+	function updateImageLoaded(map: MLMap, slot: 'a' | 'b') {
+		imageZoom[slot] = map.getZoom();
+		const item = slot === 'a' ? itemA : itemB;
+		const bounds = map.getBounds();
+		imageOutside[slot] = !!item && (bounds.getEast() < item.bbox[0] || bounds.getWest() > item.bbox[2] || bounds.getNorth() < item.bbox[1] || bounds.getSouth() > item.bbox[3]);
+		imageLoaded[slot] = !!map.getSource(`cog-${slot}`) && map.isSourceLoaded(`cog-${slot}`);
 	}
 	let tileErr = $state({ a: 0, b: 0 });
 	let tileMsg = $state({ a: '', b: '' });
@@ -270,10 +282,11 @@
 		mapA.on('move', () => mapB && sync(mapA, mapB));
 		mapA.on('moveend', schedulePasses);
 		mapA.on('moveend', updateCover);
-		const upd = () => (tilesLoading = !mapA.areTilesLoaded());
+		const upd = () => { tilesLoading = !mapA.areTilesLoaded(); updateImageLoaded(mapA, 'a'); };
 		mapA.on('dataloading', upd);
 		mapA.on('data', upd);
 		mapA.on('idle', upd);
+		mapA.on('moveend', upd);
 		mapA.on('error', onTileError('a'));
 		initOverlays(mapA);
 
@@ -425,11 +438,13 @@
 		if (map.getSource(id)) map.removeSource(id);
 		if (cogKeys[slot]) unregisterCogLayer(cogKeys[slot]!);
 		delete cogKeys[slot];
+		tileProgress[slot] = blankProgress();
+		imageLoaded[slot] = false;
 		tileErr[slot] = 0;
 		tileMsg[slot] = '';
 		if (!item) return;
 		const m = $state.snapshot(mode);
-		const reg = registerCogLayer(item, m, gain);
+		const reg = registerCogLayer(item, m, gain, (progress) => { tileProgress[slot] = progress; });
 		cogKeys[slot] = reg.key;
 		map.addSource(id, {
 			type: 'raster',
@@ -465,10 +480,11 @@
 				m.jumpTo({ bearing: mapA.getBearing(), pitch: mapA.getPitch() });
 				m.on('click', (e) => queryPoint(e.lngLat.lat, e.lngLat.lng));
 				m.on('move', () => sync(m, mapA));
-				const updB = () => (tilesLoadingB = !m.areTilesLoaded());
+				const updB = () => { tilesLoadingB = !m.areTilesLoaded(); updateImageLoaded(m, 'b'); };
 				m.on('dataloading', updB);
 				m.on('data', updB);
 				m.on('idle', updB);
+				m.on('moveend', updB);
 				m.on('error', onTileError('b'));
 				mapB = m;
 				initOverlays(m);
@@ -1104,6 +1120,23 @@
 	{#if itemB && tilesLoadingB}
 		<div class="loading loadingB" style:left="calc({swipe}% + 12px)">{t('mapLoadingB')}</div>
 	{/if}
+	<div class="tile-status" role="status" aria-live="polite">
+		{#each ['a', 'b'] as key}
+			{@const slot = key as 'a' | 'b'}
+			{@const item = slot === 'a' ? itemA : itemB}
+			{#if item}
+				{@const progress = tileProgress[slot]}
+				<div><strong>{slot.toUpperCase()} · {fmtDate(item.properties.datetime)} · {mode.id}</strong><br />
+					{#if progress.failed || tileErr[slot]}{t('tileStatusFailed')}
+					{:else if imageOutside[slot]}{t('tileStatusOutside')}
+					{:else if imageZoom[slot] < 8}{t('tileStatusZoom')}
+					{:else if progress.pending || !imageLoaded[slot]}{t('tileStatusBusy', progress.pending)}
+					{:else}{t('tileStatusDone')}{/if}
+					 · {t('tileStatusCounts', progress.completed, progress.empty)}
+				</div>
+			{:else if slot === 'a'}<div>{t('tileStatusUnselected')}</div>{/if}
+		{/each}
+	</div>
 	{#if tileErr.a || tileErr.b}
 		<div class="tile-error" role="alert">{#if tileErr.a}<div>{t('mapErrorA', tileErr.a)}{tileMsg.a ? ` — ${tileMsg.a.slice(0, 120)}` : ''}</div>{/if}{#if tileErr.b}<div>{t('mapErrorB', tileErr.b)}{tileMsg.b ? ` — ${tileMsg.b.slice(0, 120)}` : ''}</div>{/if}</div>
 	{/if}
@@ -1827,6 +1860,7 @@
 		height: 0 !important;
 		border-top: 1.5px dashed var(--accent-2);
 	}
+	.tile-status { position: absolute; bottom: 12px; left: 12px; z-index: 5; max-width: calc(100% - 24px); background: rgba(11, 16, 32, 0.9); padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.75rem; pointer-events: none; }
 	.loading {
 		position: absolute;
 		top: 10px;
