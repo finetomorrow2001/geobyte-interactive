@@ -704,7 +704,8 @@
 			animationPlaying = false;
 			return;
 		}
-		if (!imageLoaded.a || tileProgress.a.pending || tilesLoading) return;
+		// 軌道などの GeoJSON 更新は再生タイマーをリセットしない。A の実画像だけを待つ。
+		if (!imageLoaded.a || tileProgress.a.pending) return;
 		const current = animationIndex;
 		const seconds = animationSeconds;
 		const loop = animationLoop;
