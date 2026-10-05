@@ -158,7 +158,7 @@ const epsgOf = (item: StacItem) => item.properties['proj:epsg'] ?? 32654;
 // 取得・デコード・再投影・合成はすべて Worker 内で行い、メインスレッドは描画だけ。
 // 隣接する地図タイルは同じ COG 内部タイルを共有するので、2×2 ブロック単位で同じ Worker に割り当てて
 // Worker ごとのキャッシュが効くようにする。
-type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
+type Pending = { timer?: ReturnType<typeof setTimeout>; resolve: (v: unknown) => void; reject: (e: Error) => void };
 let workers: Worker[] | null = null;
 const pending = new Map<number, Pending>();
 let nextId = 1;
@@ -176,6 +176,7 @@ function getWorkers(): Worker[] {
 			workerRequests[i] = e.data.requests;
 			const p = pending.get(e.data.id);
 			if (!p) return;
+			clearTimeout(p.timer);
 			pending.delete(e.data.id);
 			if (e.data.error) p.reject(new Error(e.data.error));
 			else p.resolve(e.data.rgba ?? e.data.values ?? e.data.stats);
@@ -189,7 +190,12 @@ function submit<T>(job: Omit<Job, 'id'>, slot: number): Promise<T> {
 	const ws = getWorkers();
 	const id = nextId++;
 	return new Promise<T>((resolve, reject) => {
-		pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+		// 遅い COG 読み込みを許容しつつ、応答が来ないタイルを永久に待たない。
+		const timer = job.kind === 'tile' ? setTimeout(() => {
+			if (!pending.delete(id)) return;
+			reject(new Error('Imagery tile timed out after 300 seconds'));
+		}, 300_000) : undefined;
+		pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
 		ws[slot % ws.length].postMessage({ ...job, id });
 	});
 }

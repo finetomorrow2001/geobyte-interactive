@@ -706,6 +706,11 @@
 		}
 		// 軌道などの GeoJSON 更新は再生タイマーをリセットしない。A の実画像だけを待つ。
 		if (!imageLoaded.a || tileProgress.a.pending) return;
+		// ソースのロード完了だけでは描画成功とは限らない（中止・空タイル）。
+		if (tileProgress.a.completed === 0 || tileProgress.a.completed === tileProgress.a.empty) {
+			animationPlaying = false;
+			return;
+		}
 		const current = animationIndex;
 		const seconds = animationSeconds;
 		const loop = animationLoop;
