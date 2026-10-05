@@ -44,7 +44,8 @@ export function installCogProtocol(ml: typeof ML) {
 			if (!visible) e.progress.empty++;
 			return { data };
 		} catch (error) {
-			if (!abortController.signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) e.progress.failed++;
+			// ライブラリ側の AbortError は取得失敗。MapLibre が明示的に中止した場合だけ除外する。
+			if (!abortController.signal.aborted && registry.get(m[1]) === e) e.progress.failed++;
 			throw error;
 		} finally {
 			e.progress.pending--;
