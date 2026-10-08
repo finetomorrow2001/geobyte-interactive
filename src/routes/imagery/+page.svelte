@@ -184,6 +184,11 @@
 	/** 時系列グラフの対象: 検索結果（最新）か年次比較のシーン */
 	let seriesSource = $state<'items' | 'yearly'>('items');
 
+	$effect(() => {
+		const selected = mode.kind === 'index' ? mode.id : null;
+		untrack(() => { if (selected && selected !== seriesIndex) { seriesIndex = selected; if (point && series.length) buildSeries(); } });
+	});
+
 	// ---- 軌道 ----
 	let tleSet = $state<TleSet | null>(null);
 	let showOrbit = $state(true);
@@ -275,6 +280,11 @@
 
 		const p0 = places[0];
 		mapA = await createMap(mapElA, [p0.center[1], p0.center[0]], p0.zoom);
+		locationControl = new ml.GeolocateControl({ positionOptions: { enableHighAccuracy: true, timeout: 30000 }, trackUserLocation: true, showAccuracyCircle: true });
+		mapA.addControl(locationControl, 'top-left');
+		locationControl.on('geolocate', () => { locationBusy = false; locationMessage = t('locationFound'); });
+		locationControl.on('error', () => { locationBusy = false; locationMessage = t('locationError'); });
+		mapA.on('moveend', updateBasemapDate);
 		mapA.addControl(new ml.NavigationControl({ showCompass: false }), 'top-left');
 		mapA.on('click', (e) => queryPoint(e.lngLat.lat, e.lngLat.lng));
 		mapA.on('rotate', () => (bearing = mapA.getBearing()));
@@ -316,6 +326,7 @@
 		clearTimeout(passDebounce);
 		clearTimeout(switchedTimer);
 		setTileListener(null);
+		metadataAbort?.abort();
 	});
 
 	/** 2 枚の地図のカメラを同期（比較モード） */
@@ -339,6 +350,46 @@
 		applyOrbitVisibility(map, showOrbit);
 	}
 
+	let locationBusy = $state(false);
+	let locationMessage = $state('');
+	let locationControl: ML.GeolocateControl | null = null;
+	let basemapDate = $state('');
+	let metadataVersion = 0;
+	let metadataAbort: AbortController | null = null;
+	async function updateBasemapDate() {
+		const version = ++metadataVersion;
+		metadataAbort?.abort();
+		basemapDate = '';
+		if (!mapA || basemap !== 'esri') return;
+		const controller = new AbortController(); metadataAbort = controller;
+		basemapDate = t('baseDateBusy');
+		const c = mapA.getCenter(), b = mapA.getBounds(), canvas = mapA.getCanvas();
+		const params = new URLSearchParams({ f: 'json', geometry: `${c.lng},${c.lat}`, geometryType: 'esriGeometryPoint', sr: '4326', layers: 'visible:4', mapExtent: `${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`, imageDisplay: `${canvas.clientWidth},${canvas.clientHeight},96`, tolerance: '0', returnGeometry: 'false' });
+		try {
+			const response = await fetch(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/identify?${params}`, { signal: controller.signal });
+			if (!response.ok) throw new Error('Metadata request failed');
+			const data = await response.json();
+			const zoom = Math.min(18, Math.floor(mapA.getZoom()));
+			const rows = (data.results ?? []).filter((r: { attributes: Record<string, string> }) => zoom >= Number(r.attributes.FROM_CACHE_LEVEL) && zoom <= Number(r.attributes.TO_CACHE_LEVEL));
+			const dates = [...new Set<string>(rows.map((r: { attributes: Record<string, string> }) => r.attributes['DATE (YYYYMMDD)']).filter((d: string) => /^\d{8}$/.test(d)))].map(d => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`);
+			if (version === metadataVersion) basemapDate = dates.length ? t('baseDate', dates.join(' / ')) : t('baseDateUnknown');
+		} catch { if (version === metadataVersion) basemapDate = t('baseDateUnknown'); }
+	}
+	function locate() {
+		if (!locationControl) return;
+		locationBusy = true; locationMessage = '';
+		locationControl.trigger();
+	}
+	function rotateMap(degrees: number) { if (mapA) mapA.jumpTo({ bearing: degrees }); }
+	function graphAnimation() {
+		animationPlaying = false;
+		seriesSource = animationSource === 'annual' ? 'yearly' : 'items';
+		if (mode.kind === 'index') seriesIndex = mode.id;
+		if (!point && mapA) { const c = mapA.getCenter(); queryPoint(c.lat, c.lng); }
+		buildSeries();
+		document.getElementById('series-chart')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+
 	// ---- ベースマップ（衛星写真は初めて選ばれた時だけ読み込む） ----
 	function applyBasemap(map: MLMap, b: 'osm' | 'esri') {
 		if (b === 'esri' && !map.getSource('esri')) {
@@ -356,6 +407,7 @@
 	}
 	$effect(() => {
 		const b = basemap;
+		untrack(() => updateBasemapDate());
 		untrack(() => forMaps((m) => applyBasemap(m, b)));
 	});
 
@@ -841,6 +893,11 @@
 		finally { if (version === seriesVersion) seriesLoading = false; }
 	}
 
+	$effect(() => {
+		const selected = mode.kind === 'index' ? mode.id : null;
+		untrack(() => { if (selected && selected !== seriesIndex) { seriesIndex = selected; if (point && series.length) buildSeries(); } });
+	});
+
 	// ---- 軌道 ----
 	function ensureSatMarkers(map: MLMap) {
 		if (satMarkers.has(map)) return;
@@ -1038,7 +1095,18 @@
 
 	// 時系列チャート
 	const CX0 = 40, CX1 = 780, CY0 = 10, CY1 = 150;
-	const sx = (i: number, n: number) => (n <= 1 ? (CX0 + CX1) / 2 : CX0 + (i / (n - 1)) * (CX1 - CX0));
+	const sx = (i: number, n: number) => {
+		if (n <= 1) return (CX0 + CX1) / 2;
+		const first = Date.parse(series[0].item.properties.datetime), last = Date.parse(series[n - 1].item.properties.datetime);
+		return last === first ? (CX0 + CX1) / 2 : CX0 + (Date.parse(series[i].item.properties.datetime) - first) / (last - first) * (CX1 - CX0);
+	};
+	const seriesSegments = $derived.by(() => {
+		const segments: string[] = []; let current: string[] = [];
+		series.forEach((row, i) => {
+			if (i > 0 && seriesSource === 'yearly' && new Date(row.item.properties.datetime).getUTCFullYear() - new Date(series[i - 1].item.properties.datetime).getUTCFullYear() > 1) { if (current.length) segments.push(current.join(' ')); current = []; }
+			if (row.v === null) { if (current.length) segments.push(current.join(' ')); current = []; } else current.push(`${sx(i, series.length)},${sy(row.v)}`); });
+		if (current.length) segments.push(current.join(' ')); return segments;
+	});
 	// 年次比較は差が小さいので、値の範囲に合わせて縦軸を拡大する（検索結果モードは -1〜1 固定）
 	const yRange = $derived.by((): [number, number] => {
 		const vs = series.flatMap((x) => (x.v === null ? [] : [x.v]));
@@ -1105,6 +1173,8 @@
 	<div bind:this={mapElB} class="map mapB" class:hidden={!itemB} style:clip-path="inset(0 0 0 {swipe}%)"></div>
 
 	<div class="map-ui">
+		<button onclick={locate} disabled={locationBusy}>{locationBusy ? t('locationBusy') : t('locationBtn')}</button>
+		{#if locationMessage}<span role="status">{locationMessage}</span>{/if}
 		<div class="seg" role="group" aria-label={t('mapBasemapGroup')}>
 			<button class:active={basemap === 'osm'} onclick={() => (basemap = 'osm')}>{t('mapBasemapOsm')}</button>
 			<button class:active={basemap === 'esri'} onclick={() => (basemap = 'esri')} title={t('mapBasemapEsriTitle')}>{t('mapBasemapEsri')}</button>
@@ -1122,7 +1192,7 @@
 			</button>
 		</div>
 		<div class="compass-box">
-			<Compass {bearing} {pitch} sunAzimuth={sunAz} sunElevation={sunEl} {trackHeading} onreset={resetNorth} />
+			<Compass {bearing} {pitch} sunAzimuth={sunAz} sunElevation={sunEl} {trackHeading} onreset={resetNorth} onrotate={rotateMap} />
 			<div class="compass-key"><span style="color: #f1fa8c">●</span> {t('mapKeySun')} <span style="color: var(--green)">▲</span> {t('mapKeyTrack')}</div>
 		</div>
 		<button class="seg-toggle" class:active={showOrbit} onclick={() => (showOrbit = !showOrbit)} title={t('mapOrbitTitle')}>{t('mapOrbitBtn', showOrbit)}</button>
@@ -1170,6 +1240,7 @@
 		<div class="loading loadingB" style:left="calc({swipe}% + 12px)">{t('mapLoadingB')}</div>
 	{/if}
 	<div class="tile-status" role="status" aria-live="polite">
+		{#if basemap === 'esri'}<div>{basemapDate}</div>{/if}
 		{#each ['a', 'b'] as key}
 			{@const slot = key as 'a' | 'b'}
 			{@const item = slot === 'a' ? itemA : itemB}
@@ -1235,6 +1306,8 @@
 
 <section class="panel" aria-label={t('animationTitle')}>
 	<h2>{t('animationTitle')}</h2>
+	<button onclick={graphAnimation} disabled={!animationFrames.length || seriesLoading}>{t('animationGraph')}</button>
+	<p class="muted">{t('graphHelp')}</p>
 	<p class="muted">{t('animationHelp')}</p>
 	<div class="btn-row">
 		<label>{t('animationSource')} <select bind:value={animationSource} onchange={() => animationPlaying = false}><option value="annual">{t('annualTitle')}</option><option value="search">{t('searchTitle')}</option></select></label>
@@ -1494,7 +1567,8 @@
 	</div>
 
 	<div class="panel">
-		<h3>{t('seriesTitle')}</h3>
+		<h3 id="series-chart">{t('seriesTitle')}</h3>
+		{#if point}<p>{point.lat.toFixed(5)}, {point.lon.toFixed(5)} · {L(indices.find(ix => ix.id === seriesIndex)!.name)}</p>{/if}
 		<p class="muted">{t('seriesRefNote')}</p>
 		<div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap">
 			<select bind:value={seriesIndex} onchange={() => series.length && buildSeries()}>
@@ -1512,10 +1586,8 @@
 					<line x1={CX0} y1={sy(t)} x2={CX1} y2={sy(t)} stroke="#1c2950" />
 					<text x={CX0 - 6} y={sy(t) + 4} fill="#98a6cc" font-size="10" text-anchor="end">{+t.toFixed(2)}</text>
 				{/each}
-				<polyline
-					points={series.filter((s) => s.v !== null).map((s) => `${sx(series.indexOf(s), series.length)},${sy(s.v!)}`).join(' ')}
-					fill="none" stroke="#50fa7b" stroke-width="2"
-				/>
+				{#each seriesSegments as segment}<polyline points={segment} fill="none" stroke="#50fa7b" stroke-width="2" />{/each}
+				{#if series.some(row => row.item.id === itemA?.id)}{@const selected = series.findIndex(row => row.item.id === itemA?.id)}<line x1={sx(selected, series.length)} x2={sx(selected, series.length)} y1={CY0} y2={CY1} stroke="#f1fa8c" stroke-dasharray="4 3" />{/if}
 				{#each series as s, i (s.item.id)}
 					{#if s.reason}
 						<circle cx={sx(i, series.length)} cy={CY1} r="4" fill="none" stroke="#8b93a7" stroke-width="1.5">
@@ -1527,7 +1599,7 @@
 						</circle>
 					{/if}
 					{#if i % Math.ceil(series.length / 6) === 0 || i === series.length - 1}
-						<text x={sx(i, series.length)} y={CY1 + 22} fill="#98a6cc" font-size="10" text-anchor="middle">{seriesSource === 'yearly' ? fmtDate(s.item.properties.datetime).slice(0, 7) : fmtDate(s.item.properties.datetime).slice(5)}</text>
+						<text x={sx(i, series.length)} y={CY1 + 22} fill="#98a6cc" font-size="10" text-anchor="middle">{seriesSource === 'yearly' ? fmtDate(s.item.properties.datetime).slice(0, 7) : fmtDate(s.item.properties.datetime)}</text>
 					{/if}
 				{/each}
 			</svg>

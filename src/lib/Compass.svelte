@@ -13,7 +13,8 @@
 		sunAzimuth = null,
 		sunElevation = null,
 		trackHeading = null,
-		onreset
+		onreset,
+		onrotate
 	}: {
 		bearing?: number;
 		pitch?: number;
@@ -21,7 +22,14 @@
 		sunElevation?: number | null;
 		trackHeading?: number | null;
 		onreset?: () => void;
+		onrotate?: (bearing: number) => void;
 	} = $props();
+
+	let drag: { id: number; x: number; bearing: number; moved: boolean } | null = null;
+	let suppressClick = false;
+	function startDrag(e: PointerEvent) { drag = { id: e.pointerId, x: e.clientX, bearing, moved: false }; (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); }
+	function moveDrag(e: PointerEvent) { if (!drag || e.pointerId !== drag.id) return; const dx = e.clientX - drag.x; if (Math.abs(dx) > 3) drag.moved = true; if (drag.moved) onrotate?.(drag.bearing - dx); }
+	function endDrag() { suppressClick = !!drag?.moved; drag = null; }
 
 	const R = 44;
 	const pol = (deg: number, r: number): [number, number] => {
@@ -43,7 +51,7 @@
 	);
 </script>
 
-<button class="compass" onclick={onreset} {title} aria-label={t('compassAria')}>
+<button class="compass" onpointerdown={startDrag} onpointermove={moveDrag} onpointerup={endDrag} onpointercancel={endDrag} onclick={() => { if (!suppressClick) onreset?.(); suppressClick = false; }} onkeydown={(e) => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); onrotate?.(bearing + (e.key === 'ArrowLeft' ? -15 : 15)); } }} {title} aria-label={t('compassAria')}>
 	<svg viewBox="0 0 100 100" width="92" height="92">
 		<circle cx="50" cy="50" r="48" class="face" />
 		<g style:transform="rotate({-bearing}deg)" style:transform-origin="50px 50px">
@@ -79,6 +87,7 @@
 
 <style>
 	.compass {
+		touch-action: none;
 		padding: 0;
 		background: none;
 		border: none;
