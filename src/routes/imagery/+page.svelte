@@ -262,8 +262,22 @@
 			zoom,
 			minZoom: 3,
 			maxPitch: 70,
+			dragRotate: true,
+			pitchWithRotate: true,
+			touchZoomRotate: true,
+			touchPitch: true,
 			attributionControl: { compact: true }
 		});
+		// Shift + ホイール／トラックパッドスクロールはズームせず方位を変更する。
+		const rotateWheel = (event: WheelEvent) => {
+			if (!event.shiftKey || event.ctrlKey) return;
+			event.preventDefault(); event.stopImmediatePropagation();
+			const delta = event.deltaX || event.deltaY;
+			const pixels = delta * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientWidth : 1);
+			map.jumpTo({ bearing: map.getBearing() + Math.max(-30, Math.min(30, pixels * 0.2)) });
+		};
+		map.getCanvas().addEventListener('wheel', rotateWheel, { passive: false, capture: true });
+		map.once('remove', () => map.getCanvas().removeEventListener('wheel', rotateWheel, true));
 		return new Promise((resolve) => map.once('load', () => resolve(map)));
 	}
 
@@ -1240,6 +1254,7 @@
 		<div class="loading loadingB" style:left="calc({swipe}% + 12px)">{t('mapLoadingB')}</div>
 	{/if}
 	<div class="tile-status" role="status" aria-live="polite">
+		<div>{t('mapRotateHelp')}</div>
 		{#if basemap === 'esri'}<div>{basemapDate}</div>{/if}
 		{#each ['a', 'b'] as key}
 			{@const slot = key as 'a' | 'b'}
