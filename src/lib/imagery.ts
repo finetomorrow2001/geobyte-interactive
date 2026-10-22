@@ -140,6 +140,7 @@ export const places: Place[] = [
 	{ id: 'tokachi', name: { ja: '十勝平野', en: 'Tokachi Plain' }, center: [42.9, 143.2], zoom: 10, hint: { ja: '農地のパターン、季節変化', en: 'Field patterns and seasonal change' } },
 	{ id: 'aso', name: { ja: '阿蘇', en: 'Aso' }, center: [32.88, 131.1], zoom: 11, hint: { ja: 'カルデラの草原・火山地形', en: 'Caldera grassland and volcanic terrain' } },
 	{ id: 'uonuma', name: { ja: '魚沼', en: 'Uonuma' }, center: [37.23, 138.96], zoom: 11, hint: { ja: '豪雪地帯・米どころの年ごとの変化（「年次比較」）', en: 'Heavy-snow rice country, year by year (see “Yearly comparison”)' } },
+	{ id: 'minamiuonuma', name: { ja: '南魚沼', en: 'Minami-Uonuma' }, center: [37.06, 138.88], zoom: 11, hint: { ja: '六日町盆地の水田。魚沼コシヒカリの産地', en: 'Paddies of the Muikamachi basin, home of Uonuma Koshihikari' } },
 	{ id: 'ishigaki', name: { ja: '石垣島', en: 'Ishigaki Island' }, center: [24.4, 124.2], zoom: 11, hint: { ja: 'サンゴ礁・浅海の色', en: 'Coral reefs and shallow-water colour' } }
 ];
 
