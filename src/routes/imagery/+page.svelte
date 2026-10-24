@@ -284,6 +284,15 @@
 			touchPitch: true,
 			attributionControl: { compact: true }
 		});
+		// 両地図の実カメラ値を個別に観測できるよう、描画コンテナへ記録する。
+		const recordCamera = () => {
+			el.dataset.bearing = String(map.getBearing());
+			el.dataset.pitch = String(map.getPitch());
+			el.dataset.zoom = String(map.getZoom());
+			el.dataset.center = `${map.getCenter().lng},${map.getCenter().lat}`;
+		};
+		map.on('move', recordCamera);
+		map.on('render', recordCamera);
 		// Shift + ホイール／トラックパッドスクロールはズームせず方位を変更する。
 		const rotateWheel = (event: WheelEvent) => {
 			if (!event.shiftKey || event.ctrlKey) return;
@@ -319,7 +328,11 @@
 		mapA.on('click', (e) => queryPoint(e.lngLat.lat, e.lngLat.lng));
 		mapA.on('rotate', () => (bearing = mapA.getBearing()));
 		mapA.on('pitch', () => (pitch = mapA.getPitch()));
-		mapA.on('move', () => mapB && sync(mapA, mapB));
+		// 回転・傾斜と地形のカメラ補正後も、BをAの最終カメラへ追従させる。
+		const syncComparison = () => { if (mapB) sync(mapA, mapB); };
+		for (const event of ['move', 'rotate', 'pitch', 'moveend', 'render'] as const) {
+			mapA.on(event, syncComparison);
+		}
 		mapA.on('moveend', schedulePasses);
 		mapA.on('moveend', updateCover);
 		const upd = () => { tilesLoading = !mapA.areTilesLoaded(); updateImageLoaded(mapA, 'a'); };
@@ -365,9 +378,17 @@
 	/** 2 枚の地図のカメラを同期（比較モード） */
 	function sync(from: MLMap, to: MLMap) {
 		if (syncing) return;
+		const center = from.getCenter();
+		const targetCenter = to.getCenter();
+		if (Math.abs(center.lng - targetCenter.lng) < 1e-9 &&
+			Math.abs(center.lat - targetCenter.lat) < 1e-9 &&
+			Math.abs(from.getZoom() - to.getZoom()) < 1e-9 &&
+			Math.abs(from.getBearing() - to.getBearing()) < 1e-9 &&
+			Math.abs(from.getPitch() - to.getPitch()) < 1e-9) return;
 		syncing = true;
-		to.jumpTo({ center: from.getCenter(), zoom: from.getZoom(), bearing: from.getBearing(), pitch: from.getPitch() });
-		syncing = false;
+		try {
+			to.jumpTo({ center: from.getCenter(), zoom: from.getZoom(), bearing: from.getBearing(), pitch: from.getPitch() });
+		} finally { syncing = false; }
 	}
 
 	/** 新しく作った地図に、現在の表示状態（ベースマップ・3D・フットプリント・地点・軌道）を適用 */
