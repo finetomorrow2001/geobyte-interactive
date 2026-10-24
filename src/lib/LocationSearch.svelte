@@ -10,7 +10,7 @@
 			none: '場所が見つかりません。地域・国を添えるか、座標で指定してください。',
 			coordinates: '座標を確認してください。緯度は ±85.0511°、経度は ±180°。例: lat=35.68, lon=139.75',
 			service: '場所検索サービスに接続できません。再試行するか座標を入力してください。', rate: '少し待ってから検索してください。',
-			selected: '表示する場所', attribution: '場所検索: Photon / © OpenStreetMap contributors',
+			selected: '表示する場所', addressMatch: '一致した住所（地図データ）', mappedPoi: '地図上の施設名', attribution: '場所検索: Photon / © OpenStreetMap contributors',
 			privacy: '地名・住所・郵便番号は Photon に送信されます。座標入力はブラウザ内で処理します。'
 		},
 		en: {
@@ -20,7 +20,7 @@
 			none: 'No location found. Add a region or country, or enter coordinates.',
 			coordinates: 'Check coordinates: latitude ±85.0511°, longitude ±180°. Example: lat=35.68, lon=139.75',
 			service: 'Location search is unavailable. Try again or enter coordinates.', rate: 'Please wait a moment before searching again.',
-			selected: 'Location to display', attribution: 'Place search: Photon / © OpenStreetMap contributors',
+			selected: 'Location to display', addressMatch: 'Matching address (map data)', mappedPoi: 'Mapped POI', attribution: 'Place search: Photon / © OpenStreetMap contributors',
 			privacy: 'Names, addresses and postal codes are sent to Photon. Coordinates are processed in your browser.'
 		}
 	});
@@ -64,10 +64,25 @@
 	<div aria-live="polite">
 		{#if error}<p class="note warn">{t(error as 'coordinates' | 'rate' | 'service')}</p>{/if}
 		{#if searched && !results.length && !selected}<p>{t('none')}</p>{/if}
-		{#if selected}<p><strong>{t('selected')}:</strong> {selected.name} · {selected.lat.toFixed(5)}, {selected.lon.toFixed(5)}</p>{/if}
+		{#if selected}
+			<div class="selected-location">
+				{#if selected.addressMatch}<span class="address-kind">{t('addressMatch')}</span>{/if}
+				<p><strong>{t('selected')}:</strong> {selected.name}</p>
+				{#if selected.detail}<span>{selected.detail}</span>{/if}
+				{#if selected.poiName}<span>{t('mappedPoi')}: {selected.poiName}</span>{/if}
+				<span class="coords">{selected.lat.toFixed(5)}, {selected.lon.toFixed(5)}</span>
+			</div>
+		{/if}
 	</div>
 	{#if results.length}
-		<ul>{#each results as result (result.id)}<li><button type="button" class="ghost result" onclick={() => choose(result)}><strong>{result.name}</strong><span>{result.detail}</span><span class="coords">{result.lat.toFixed(5)}, {result.lon.toFixed(5)}</span></button></li>{/each}</ul>
+		<ul>{#each results as result (result.id)}
+			<li><button type="button" class="ghost result" onclick={() => choose(result)}>
+				{#if result.addressMatch}<span class="address-kind">{t('addressMatch')}</span>{/if}
+				<strong>{result.name}</strong><span>{result.detail}</span>
+				{#if result.poiName}<span>{t('mappedPoi')}: {result.poiName}</span>{/if}
+				<span class="coords">{result.lat.toFixed(5)}, {result.lon.toFixed(5)}</span>
+			</button></li>
+		{/each}</ul>
 	{/if}
 	<small class="muted"><a href="https://photon.komoot.io" target="_blank" rel="noreferrer">{t('attribution')}</a> · {t('privacy')}</small>
 </section>
@@ -82,5 +97,9 @@
 	.result { display: flex; flex-direction: column; align-items: flex-start; text-align: left; width: 100%; gap: 0.1rem; white-space: normal; overflow-wrap: anywhere; }
 	.result span { font-size: 0.8rem; color: var(--muted); }
 	.coords { font-family: var(--mono); }
+	.selected-location { display: flex; flex-direction: column; gap: 0.15rem; margin: 0.6rem 0; overflow-wrap: anywhere; }
+	.selected-location p { margin: 0; }
+	.selected-location > span { font-size: 0.8rem; color: var(--muted); }
+	.result .address-kind, .selected-location .address-kind { color: var(--accent-2); font-size: 0.7rem; }
 	small { display: block; font-size: 0.7rem; }
 </style>

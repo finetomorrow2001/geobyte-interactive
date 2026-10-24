@@ -114,10 +114,14 @@ type CogInfo = {
 	nodata: number | null;
 };
 
+// Full-archive comparison can visit hundreds of files. Bound header/range-source references
+// as well as decoded tiles, so switching dates cannot retain every scene for the whole tab.
+const COG_CACHE_MAX = 24;
 const cache = new Map<string, Promise<CogInfo>>();
 
 export function openCog(href: string): Promise<CogInfo> {
 	let p = cache.get(href);
+	if (p) { cache.delete(href); cache.set(href, p); }
 	if (!p) {
 		p = (async () => {
 			const tiff = await fromUrl(href, { allowFullFile: false });
@@ -141,8 +145,9 @@ export function openCog(href: string): Promise<CogInfo> {
 				nodata: nd
 			};
 		})();
+		if (cache.size >= COG_CACHE_MAX) cache.delete(cache.keys().next().value!);
 		cache.set(href, p);
-		p.catch(() => cache.delete(href));
+		p.catch(() => { if (cache.get(href) === p) cache.delete(href); });
 	}
 	return p;
 }

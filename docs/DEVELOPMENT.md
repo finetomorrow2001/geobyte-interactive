@@ -142,3 +142,11 @@ while((n=w.nextNode())){const s=n.textContent.trim(); if(s&&jp.test(s)) out.push
 - 場所を選んだら `resetStudy()` で古い地域・A/B・年次結果を破棄して地図移動・再検索。検索と追加取得は同じ AbortController/version を使う。並行する古い結果を採用しない。
 - アーカイブ下限は collection metadata の2015-06-27。年次上限は固定の9/10年にせず現在年から計算。スライダーの最古日には年次カードも含める。
 - 確認対象: 山・川・住所・郵便番号の候補表示、座標入力順/ラベル/不正値、場所選択後の地図とシーンの一致、全アーカイブ・古い順・追加ページ、最古/最新のA/B、条件変更中に古い応答が混ざらないこと。画像の取得可能年は地点ごとに異なる。
+
+
+## ローカル容量の管理
+
+- `npm run clean:build`: 開発・プレビュー・ビルドを停止した後、再生成可能な `.svelte-kit` と `.vercel/output` を削除。次の `npm run check` / `npm run build` / `npm run dev` で再生成される。
+- `.npm/_npx` は単なるダウンロードキャッシュではなく、稼働中MCPツールが実行ファイルを参照している場合がある。`npm cache npx ls` とプロセスの参照を確認し、不要なキーだけ `npm cache npx rm <key>` で整理する。
+- uvキャッシュのpruneが「in-use」となったら中断し、forceで無視しない。ブラウザバイナリも既存Playwrightパッケージの `browsers.json` と稼働プロセスを確認してから不要なrevisionだけ整理する。
+- 保存済みvisualizationsや検証バックアップは原本が含まれうるため、容量が大きいだけでキャッシュ扱いして削除しない。OSの空き容量はスワップ等でも変動するため、削除対象のサイズと操作後の空き容量を区別して報告する。
