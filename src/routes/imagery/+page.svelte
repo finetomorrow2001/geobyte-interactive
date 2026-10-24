@@ -269,9 +269,10 @@
 		};
 	}
 
-	function createMap(el: HTMLDivElement, center: ML.LngLatLike, zoom: number): Promise<MLMap> {
+	function createMap(el: HTMLDivElement, center: ML.LngLatLike, zoom: number, interactive = true): Promise<MLMap> {
 		const map = new ml.Map({
 			container: el,
+			interactive,
 			style: baseStyle(),
 			center,
 			zoom,
@@ -283,6 +284,15 @@
 			touchPitch: true,
 			attributionControl: { compact: true }
 		});
+		// 両地図の実カメラ値を個別に観測できるよう、描画コンテナへ記録する。
+		const recordCamera = () => {
+			el.dataset.bearing = String(map.getBearing());
+			el.dataset.pitch = String(map.getPitch());
+			el.dataset.zoom = String(map.getZoom());
+			el.dataset.center = `${map.getCenter().lng},${map.getCenter().lat}`;
+		};
+		map.on('move', recordCamera);
+		map.on('render', recordCamera);
 		// Shift + ホイール／トラックパッドスクロールはズームせず方位を変更する。
 		const rotateWheel = (event: WheelEvent) => {
 			if (!event.shiftKey || event.ctrlKey) return;
@@ -291,7 +301,7 @@
 			const pixels = delta * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientWidth : 1);
 			map.jumpTo({ bearing: map.getBearing() + Math.max(-30, Math.min(30, pixels * 0.2)) });
 		};
-		map.getCanvas().addEventListener('wheel', rotateWheel, { passive: false, capture: true });
+		if (interactive) map.getCanvas().addEventListener('wheel', rotateWheel, { passive: false, capture: true });
 		map.once('remove', () => map.getCanvas().removeEventListener('wheel', rotateWheel, true));
 		return new Promise((resolve) => map.once('load', () => resolve(map)));
 	}
@@ -318,7 +328,11 @@
 		mapA.on('click', (e) => queryPoint(e.lngLat.lat, e.lngLat.lng));
 		mapA.on('rotate', () => (bearing = mapA.getBearing()));
 		mapA.on('pitch', () => (pitch = mapA.getPitch()));
-		mapA.on('move', () => mapB && sync(mapA, mapB));
+		// 回転・傾斜と地形のカメラ補正後も、BをAの最終カメラへ追従させる。
+		const syncComparison = () => { if (mapB) sync(mapA, mapB); };
+		for (const event of ['move', 'rotate', 'pitch', 'moveend', 'render'] as const) {
+			mapA.on(event, syncComparison);
+		}
 		mapA.on('moveend', schedulePasses);
 		mapA.on('moveend', updateCover);
 		const upd = () => { tilesLoading = !mapA.areTilesLoaded(); updateImageLoaded(mapA, 'a'); };
@@ -364,9 +378,17 @@
 	/** 2 枚の地図のカメラを同期（比較モード） */
 	function sync(from: MLMap, to: MLMap) {
 		if (syncing) return;
+		const center = from.getCenter();
+		const targetCenter = to.getCenter();
+		if (Math.abs(center.lng - targetCenter.lng) < 1e-9 &&
+			Math.abs(center.lat - targetCenter.lat) < 1e-9 &&
+			Math.abs(from.getZoom() - to.getZoom()) < 1e-9 &&
+			Math.abs(from.getBearing() - to.getBearing()) < 1e-9 &&
+			Math.abs(from.getPitch() - to.getPitch()) < 1e-9) return;
 		syncing = true;
-		to.jumpTo({ center: from.getCenter(), zoom: from.getZoom(), bearing: from.getBearing(), pitch: from.getPitch() });
-		syncing = false;
+		try {
+			to.jumpTo({ center: from.getCenter(), zoom: from.getZoom(), bearing: from.getBearing(), pitch: from.getPitch() });
+		} finally { syncing = false; }
 	}
 
 	/** 新しく作った地図に、現在の表示状態（ベースマップ・3D・フットプリント・地点・軌道）を適用 */
@@ -559,11 +581,10 @@
 		if (mapB) return mapB;
 		if (!mapBReady) {
 			const generation = mapBGeneration;
-			mapBReady = createMap(mapElB, mapA.getCenter(), mapA.getZoom()).then((m) => {
+			mapBReady = createMap(mapElB, mapA.getCenter(), mapA.getZoom(), false).then((m) => {
 				if (generation !== mapBGeneration) { m.remove(); throw new Error('Comparison map superseded'); }
 				m.jumpTo({ bearing: mapA.getBearing(), pitch: mapA.getPitch() });
-				m.on('click', (e) => queryPoint(e.lngLat.lat, e.lngLat.lng));
-				m.on('move', () => sync(m, mapA));
+				// B は表示専用。左右どちらの入力も背面の A が扱い、A → B のみ同期する。
 				const updB = () => { tilesLoadingB = !m.areTilesLoaded(); updateImageLoaded(m, 'b'); };
 				m.on('dataloading', updB);
 				m.on('data', updB);
@@ -1852,6 +1873,7 @@
 		align-items: center;
 		padding: 0.3rem 0.55rem;
 	}
+	.mapB { pointer-events: none; }
 	.mapB.hidden {
 		visibility: hidden;
 	}
