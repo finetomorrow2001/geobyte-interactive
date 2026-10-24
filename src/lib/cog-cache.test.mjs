@@ -126,3 +126,19 @@ test('header client retries network failures and rejects full-file responses', a
     await assert.rejects(new HeaderRangeClient('other').request({ headers: { Range: 'bytes=0-9' } }), /Range/);
   } finally { globalThis.fetch = originalFetch; }
 });
+
+test('HTTP 206 works when CORS hides Content-Range from browser JavaScript', async () => {
+  const { HeaderRangeClient } = await loadCog(() => {});
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return new Response(new Uint8Array(65536).fill(7), { status: 206 }); };
+  try {
+    const client = new HeaderRangeClient('s3-cors-scene');
+    const response = await client.request({ headers: { Range: 'bytes=128-255' } });
+    assert.equal(response.status, 206);
+    assert.equal(response.getHeader('content-range'), undefined);
+    assert.deepEqual(new Uint8Array(await response.getData()), new Uint8Array(128).fill(7));
+    await client.request({ headers: { Range: 'bytes=0-1023' } });
+    assert.equal(calls, 1);
+  } finally { globalThis.fetch = originalFetch; }
+});

@@ -105,17 +105,20 @@ export function tileUtm(x: number, y: number, z: number, size: number, epsg: num
  * geotiff's general block LRU can evict data needed by concurrent large reads.
  */
 export class HeaderRangeClient extends BaseClient {
-	private header?: Promise<{ data: ArrayBuffer; total: string }>;
+	private header?: Promise<{ data: ArrayBuffer; total?: string }>;
 	private async prefix() {
 		if (!this.header) {
 			this.header = (async () => {
 				const response = await fetch(this.url, { headers: { Range: 'bytes=0-65535' } });
 				const range = response.headers.get('content-range')?.match(/^bytes 0-(\d+)\/(\d+)$/);
-				if (response.status !== 206 || !range || Number(range[1]) >= 65536) {
+				if (response.status !== 206 || (range && Number(range[1]) >= 65536)) {
 					await response.body?.cancel();
 					throw new Error('COG server must support HTTP Range requests');
 				}
-				return { data: await response.arrayBuffer(), total: range[2] };
+				// S3 CORS can hide Content-Range; 206 still confirms a partial response.
+				const data = await response.arrayBuffer();
+				if (!data.byteLength || data.byteLength > 65536) throw new Error('Invalid COG header range length');
+				return { data, total: range?.[2] };
 			})();
 			void this.header.catch(() => { this.header = undefined; });
 		}
@@ -129,7 +132,7 @@ export class HeaderRangeClient extends BaseClient {
 			signal?.throwIfAborted();
 			const start = Number(range[1]), end = Math.min(Number(range[2]) + 1, prefix.data.byteLength);
 			return new CogRangeResponse(new Response(prefix.data.slice(start, end), {
-				status: 206, headers: { 'content-range': `bytes ${start}-${end - 1}/${prefix.total}` }
+				status: 206, headers: prefix.total ? { 'content-range': `bytes ${start}-${end - 1}/${prefix.total}` } : {}
 			}));
 		}
 		return new CogRangeResponse(await fetch(this.url, { headers, signal }));

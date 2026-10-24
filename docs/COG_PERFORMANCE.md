@@ -52,6 +52,11 @@ large pixel reads are not expanded. The application also shares decoded tiles,
 whereas this isolated benchmark intentionally reads the same raster twice.
 Browser before/after validation of the final version is pending.
 
+The first header-adapter trial also exposed a browser-only CORS difference:
+S3 can return HTTP 206 while hiding Content-Range from JavaScript. The adapter
+now accepts bounded 206 bodies without that optional header, matching the
+original geotiff behavior. A regression test covers this browser condition.
+
 ## Automated checks
 
 `npm test` includes cache sharing, in-flight retention under eviction pressure,
