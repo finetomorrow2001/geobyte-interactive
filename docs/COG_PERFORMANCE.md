@@ -66,3 +66,44 @@ original geotiff behavior. A regression test covers this browser condition.
 tile-count eviction, failed-request retry, 40 concurrent header/pixel reads,
 abort handling and full-file response rejection.
 `npm run check` and `npm run build` also pass.
+
+## Browser acceptance (2026-10-25 JST)
+
+Antigravity exercised Yubari South/North and Uonuma with TCI and NDVI. All six
+regional/mode combinations completed imagery loading and A/B camera sync.
+At identical initial poses (bearing 0, pitch 60), clear canvas ROI differences
+were 0%, except 0.001% in one Yubari North TCI ROI. Fixed 0/15-degree compass
+captures also had 0% clear-ROI difference. UI/time changes and screenshots at
+different inertial drag bearings are not imagery pixel regressions.
+
+Intermediate byte-cap candidates produced warm/rotation slowdowns and were
+rejected. Final source f7a6121 preserves the baseline 120 completed tiles per
+worker, separating pending requests and refreshing LRU hits. Its final preview
+acceptance covered the previously problematic conditions:
+
+| Comparable measurement | Baseline | Final preview |
+| --- | ---: | ---: |
+| Yubari North TCI initial load (single trial) | 64677 ms | 51901 ms |
+| Yubari North TCI first fixed 0→15° rotation | 11082 ms | 10841 ms |
+| Yubari North TCI first fixed 15→0° return | 80 ms | 77 ms |
+| Uonuma NDVI initial load | 41243 ms reference | 40686 ms median of 3 |
+
+The final Uonuma initial trials were 55925, 35495 and 40686 ms. All final
+Yubari North 3 round trips and Uonuma 3 warm operations completed with sync.
+The final North second/third forward rotations took 95/503 ms, and Uonuma
+warm fixed-angle operations took 106/85/78 ms before the additional 500 ms
+stability verification. These warm timings must not be divided by a baseline
+first-load or a different Ctrl-drag angle to advertise a speedup.
+
+Earlier same-source header-cache probes showed larger initial-load savings,
+including Yubari South NDVI 94507→70639 ms and Uonuma TCI 47313→20074 ms;
+these used an intermediate cache-cap configuration and are not final-version
+benchmark guarantees. External transfer and tile decoding still take tens of
+seconds in some cases. No universal all-operations speedup is claimed.
+
+Raw browser JSON and screenshots are retained locally under
+`docs/testing/cog-perf-benchmark/`, including `full_comparison_report_v4.json`,
+`preview_compass_verification.json`, `final_yubari_north_tci_compass.json` and
+`final_uonuma_ndvi_compass.json`. The six-condition image tests preceded the
+final cache-cap removal; the final change affects retention, not sampling or
+rendering math. Final source unit tests: 25 passed; typecheck/build passed.
