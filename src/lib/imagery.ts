@@ -1,4 +1,5 @@
 import type { Job, TileJob, PointJob, StatsJob } from './cog.worker';
+import { createSceneAffinity } from './worker-affinity';
 import { dnOffsetFor, normDiffDn } from './reflectance';
 import type { SclSummary } from './scl';
 import type { LText } from './i18n/lang.svelte';
@@ -157,13 +158,14 @@ const epsgOf = (item: StacItem) => item.properties['proj:epsg'] ?? 32654;
 
 // ---- Worker プール ----
 // 取得・デコード・再投影・合成はすべて Worker 内で行い、メインスレッドは描画だけ。
-// 隣接する地図タイルは同じ COG 内部タイルを共有するので、2×2 ブロック単位で同じ Worker に割り当てて
-// Worker ごとのキャッシュが効くようにする。
+// 合成画像は従来の2×2空間分割。指数画像はシーン単位に割り当て、複数Workerによる
+// 同じ赤・近赤外COGブロックの重複取得/デコードを避ける。連続するシーンは別Workerへ配分する。
 type Pending = { timer?: ReturnType<typeof setTimeout>; resolve: (v: unknown) => void; reject: (e: Error) => void };
 let workers: Worker[] | null = null;
 const pending = new Map<number, Pending>();
 let nextId = 1;
 const workerRequests: number[] = [];
+const indexWorkerSlot = createSceneAffinity();
 
 /** 全 Worker が発行した COG への HTTP リクエスト数の合計 */
 export const cogRequestCount = () => workerRequests.reduce((a, b) => a + b, 0);
@@ -207,7 +209,9 @@ function submit<T>(job: Omit<Job, 'id'>, slot: number): Promise<T> {
  */
 export async function renderTile(item: StacItem, mode: RenderMode, gain: number, z: number, x: number, y: number, size = 256): Promise<Uint8ClampedArray<ArrayBuffer>> {
 	const epsg = epsgOf(item);
-	const slot = ((x >> 1) * 31 + (y >> 1)) >>> 0;
+	const slot = mode.kind === 'index'
+		? indexWorkerSlot(item.id, getWorkers().length)
+		: ((x >> 1) * 31 + (y >> 1)) >>> 0;
 	let job: Omit<TileJob, 'id'>;
 	if (mode.kind === 'composite') {
 		const c = composites.find((v) => v.id === mode.id)!;
