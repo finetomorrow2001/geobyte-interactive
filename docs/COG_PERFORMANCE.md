@@ -13,9 +13,10 @@ The existing 24-entry COG metadata limit bounds retained header prefixes at
 1.5 MiB per worker. Failed prefix requests retry, and callers cannot abort a
 shared prefix read needed by another caller.
 
-Decoded internal tiles use a 120-entry LRU with a 128 MiB cap per worker instead of a tile-count FIFO.
-The initial 32 MiB cap was rejected after warm browser latency regressed;
-retaining the original tile working-set size avoids unnecessary evictions.
+Decoded internal tiles use a 120-entry LRU per worker instead of a tile-count FIFO.
+Intermediate 32 MiB and 128 MiB byte caps were removed after browser timing
+showed warm/rotation slowdowns: byte caps can reduce the original 120-tile
+working set. The final version preserves the existing count limit.
 Pending reads are stored separately so cache pressure cannot discard shared
 in-flight requests and cause duplicate reads. Failed reads are removed for retry.
 Resolution selection, reprojection, sample values, nodata and colormaps are unchanged.
@@ -62,6 +63,6 @@ original geotiff behavior. A regression test covers this browser condition.
 ## Automated checks
 
 `npm test` includes cache sharing, in-flight retention under eviction pressure,
-byte-budget eviction, failed-request retry, 40 concurrent header/pixel reads,
+tile-count eviction, failed-request retry, 40 concurrent header/pixel reads,
 abort handling and full-file response rejection.
 `npm run check` and `npm run build` also pass.

@@ -45,13 +45,13 @@ test('internal tiles deduplicate pending reads, reuse warm data, and retain acti
   const img = image(async ({ window: [x] }) => {
     calls++;
     if (x === 99) return new Promise(resolve => { complete = resolve; });
-    // ArrayLike fallback accounts for 8 MiB without allocating large arrays.
-    return [{ length: 1024 * 1024 }];
+    // Keep data small while exceeding the completed-tile count limit.
+    return [new Uint8Array([42])];
   });
   const info = { images: [img] };
   const pending = cog.getInternalTile(info, 'scene', 0, 99, 0);
   assert.equal(pending, cog.getInternalTile(info, 'scene', 0, 99, 0));
-  for (let x = 0; x < 24; x++) await cog.getInternalTile(info, 'scene', 0, x, 0);
+  for (let x = 0; x < 128; x++) await cog.getInternalTile(info, 'scene', 0, x, 0);
   assert.equal(pending, cog.getInternalTile(info, 'scene', 0, 99, 0));
   complete([{ length: 1, 0: 42 }]);
   const tile = await pending;
@@ -59,7 +59,7 @@ test('internal tiles deduplicate pending reads, reuse warm data, and retain acti
   assert.equal(await cog.getInternalTile(info, 'scene', 0, 99, 0), tile);
   const before = calls;
   await cog.getInternalTile(info, 'scene', 0, 0, 0);
-  assert.equal(calls, before + 1, 'old data is evicted to respect the byte budget');
+  assert.equal(calls, before + 1, 'old data is evicted to respect the tile-count limit');
 });
 
 test('failed internal reads can be retried', async () => {
