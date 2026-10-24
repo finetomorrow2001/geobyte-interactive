@@ -1,4 +1,8 @@
-import {fromUrl} from 'geotiff';
+import {fromUrl,fromCustomClient} from 'geotiff';
+import ts from 'typescript';
+import {readFileSync} from 'node:fs';
+const compiled = ts.transpileModule(readFileSync(new URL('../src/lib/cog.ts',import.meta.url),'utf8'), {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
+const {HeaderRangeClient}=await import('data:text/javascript;base64,'+Buffer.from(compiled.replace(/from ["']geotiff["']/g,'from '+JSON.stringify(import.meta.resolve('geotiff')))).toString('base64'));
 import {writeFileSync,mkdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 const scene='S2B_54TWN_20261023_1_L2A';
@@ -14,8 +18,7 @@ for(const buffered of [false,true,true,false,false,true]) {
   return response;
  };
  const start=performance.now();
- const options=buffered?{allowFullFile:false,blockSize:65536,cacheSize:16}:{allowFullFile:false};
- const tiff=await fromUrl(href,options); const n=await tiff.getImageCount();
+ const tiff=buffered ? await fromCustomClient(new HeaderRangeClient(href),{allowFullFile:false}) : await fromUrl(href,{allowFullFile:false}); const n=await tiff.getImageCount();
  const images=[];for(let i=0;i<n;i++)images.push(await tiff.getImage(i));
  const headerMs=performance.now()-start,headerRequests=count,headerBytes=bytes;
  const image=images[Math.min(3,n-1)];

@@ -3,7 +3,7 @@
  * geotiff.js が HTTP Range Request で必要なタイルだけ取得する。
  * Sentinel-2 L2A（UTM 投影）を Web メルカトルのタイルに再投影して描く。
  */
-import { fromUrl, Pool, type GeoTIFF, type GeoTIFFImage } from 'geotiff';
+import { fromCustomClient, BaseClient, BaseResponse, Pool, type GeoTIFF, type GeoTIFFImage } from 'geotiff';
 
 /** メインスレッドで使う場合のみ Web Worker でデフレート展開を並列化（Worker 内では入れ子にしない） */
 const pool = typeof window !== 'undefined' && typeof Worker !== 'undefined' ? new Pool() : undefined;
@@ -101,6 +101,47 @@ export function tileUtm(x: number, y: number, z: number, size: number, epsg: num
 }
 
 // ---- COG ----
+/** Cache only the small immutable header prefix. Pixel ranges remain exact reads.
+ * geotiff's general block LRU can evict data needed by concurrent large reads.
+ */
+export class HeaderRangeClient extends BaseClient {
+	private header?: Promise<{ data: ArrayBuffer; total: string }>;
+	private async prefix() {
+		if (!this.header) {
+			this.header = (async () => {
+				const response = await fetch(this.url, { headers: { Range: 'bytes=0-65535' } });
+				const range = response.headers.get('content-range')?.match(/^bytes 0-(\d+)\/(\d+)$/);
+				if (response.status !== 206 || !range || Number(range[1]) >= 65536) {
+					await response.body?.cancel();
+					throw new Error('COG server must support HTTP Range requests');
+				}
+				return { data: await response.arrayBuffer(), total: range[2] };
+			})();
+			void this.header.catch(() => { this.header = undefined; });
+		}
+		return this.header;
+	}
+	async request({ headers, signal }: RequestInit = {}): Promise<BaseResponse> {
+		signal?.throwIfAborted();
+		const range = new Headers(headers).get('range')?.match(/^bytes=(\d+)-(\d+)$/);
+		if (range && Number(range[2]) < 65536) {
+			const prefix = await this.prefix();
+			signal?.throwIfAborted();
+			const start = Number(range[1]), end = Math.min(Number(range[2]) + 1, prefix.data.byteLength);
+			return new CogRangeResponse(new Response(prefix.data.slice(start, end), {
+				status: 206, headers: { 'content-range': `bytes ${start}-${end - 1}/${prefix.total}` }
+			}));
+		}
+		return new CogRangeResponse(await fetch(this.url, { headers, signal }));
+	}
+}
+class CogRangeResponse extends BaseResponse {
+	constructor(private response: Response) { super(); }
+	get status() { return this.response.status; }
+	getHeader(name: string) { return this.response.headers.get(name) ?? undefined; }
+	getData() { return this.response.arrayBuffer(); }
+}
+
 type CogInfo = {
 	tiff: GeoTIFF;
 	images: GeoTIFFImage[]; // 0 = フル解像度、以降オーバービュー
@@ -124,9 +165,8 @@ export function openCog(href: string): Promise<CogInfo> {
 	if (p) { cache.delete(href); cache.set(href, p); }
 	if (!p) {
 		p = (async () => {
-			// 隣接タイルとIFDヘッダーの重複Range取得をまとめる（1 COGあたり最大1 MiB）。
-			const sourceOptions = { allowFullFile: false, blockSize: 65536, cacheSize: 16 };
-			const tiff = await fromUrl(href, sourceOptions);
+			// ヘッダーのみ64 KiBを共有し、大きな画素Rangeの過剰取得・並行LRU競合を避ける。
+			const tiff = await fromCustomClient(new HeaderRangeClient(href), { allowFullFile: false });
 			const count = await tiff.getImageCount();
 			const images: GeoTIFFImage[] = [];
 			for (let i = 0; i < count; i++) images.push(await tiff.getImage(i));
