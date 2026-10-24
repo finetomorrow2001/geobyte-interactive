@@ -215,7 +215,9 @@ type Decoded = { data: ArrayLike<number>[]; w: number; h: number; x0: number; y0
 // 完了済みデータはバイト数で制限し、取得中の共有Promiseは追い出さない。
 const tileCache = new Map<string, Decoded>();
 const tileInFlight = new Map<string, Promise<Decoded>>();
-const TILE_CACHE_BYTES = 32 * 1024 * 1024;
+// Keep the original 120-tile working set; do not trade warm performance for a tiny cache.
+const TILE_CACHE_MAX = 120;
+const TILE_CACHE_BYTES = 128 * 1024 * 1024;
 let tileCacheBytes = 0;
 const decodedBytes = (tile: Decoded) => tile.data.reduce((sum, band) =>
 	sum + (ArrayBuffer.isView(band) ? band.byteLength : band.length * 8), 0);
@@ -244,7 +246,7 @@ function getInternalTile(cog: CogInfo, href: string, level: number, tx: number, 
 		tileInFlight.delete(key);
 		const bytes = decodedBytes(tile);
 		if (bytes > TILE_CACHE_BYTES) return;
-		while (tileCacheBytes + bytes > TILE_CACHE_BYTES && tileCache.size) {
+		while ((tileCacheBytes + bytes > TILE_CACHE_BYTES || tileCache.size >= TILE_CACHE_MAX) && tileCache.size) {
 			const oldest = tileCache.keys().next().value!;
 			tileCacheBytes -= decodedBytes(tileCache.get(oldest)!);
 			tileCache.delete(oldest);

@@ -18,7 +18,7 @@ async function loadCog(fromCustomClient) {
 
 function image(readRasters) {
   return { getTileWidth: () => 1, getTileHeight: () => 1,
-    getWidth: () => 100, getHeight: () => 100, readRasters };
+    getWidth: () => 1000, getHeight: () => 1000, readRasters };
 }
 
 test('COG headers share one open and enable bounded Range caching; failed opens retry', async () => {
@@ -51,7 +51,7 @@ test('internal tiles deduplicate pending reads, reuse warm data, and retain acti
   const info = { images: [img] };
   const pending = cog.getInternalTile(info, 'scene', 0, 99, 0);
   assert.equal(pending, cog.getInternalTile(info, 'scene', 0, 99, 0));
-  for (let x = 0; x < 8; x++) await cog.getInternalTile(info, 'scene', 0, x, 0);
+  for (let x = 0; x < 24; x++) await cog.getInternalTile(info, 'scene', 0, x, 0);
   assert.equal(pending, cog.getInternalTile(info, 'scene', 0, 99, 0));
   complete([{ length: 1, 0: 42 }]);
   const tile = await pending;
@@ -141,4 +141,18 @@ test('HTTP 206 works when CORS hides Content-Range from browser JavaScript', asy
     await client.request({ headers: { Range: 'bytes=0-1023' } });
     assert.equal(calls, 1);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('warm cache retains the original 120-tile working set and refreshes LRU hits', async () => {
+  const cog = await loadCog(() => {});
+  let calls = 0;
+  const info = { images: [image(async () => { calls++; return [new Uint8Array([42])]; })] };
+  for (let x = 0; x < 120; x++) await cog.getInternalTile(info, 'scene', 0, x, 0);
+  const hot = await cog.getInternalTile(info, 'scene', 0, 0, 0);
+  assert.equal(calls, 120);
+  await cog.getInternalTile(info, 'scene', 0, 120, 0);
+  assert.equal(await cog.getInternalTile(info, 'scene', 0, 0, 0), hot);
+  assert.equal(calls, 121);
+  await cog.getInternalTile(info, 'scene', 0, 1, 0);
+  assert.equal(calls, 122, 'least recently used tile is evicted');
 });
