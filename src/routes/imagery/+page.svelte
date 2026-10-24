@@ -269,9 +269,10 @@
 		};
 	}
 
-	function createMap(el: HTMLDivElement, center: ML.LngLatLike, zoom: number): Promise<MLMap> {
+	function createMap(el: HTMLDivElement, center: ML.LngLatLike, zoom: number, interactive = true): Promise<MLMap> {
 		const map = new ml.Map({
 			container: el,
+			interactive,
 			style: baseStyle(),
 			center,
 			zoom,
@@ -291,7 +292,7 @@
 			const pixels = delta * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientWidth : 1);
 			map.jumpTo({ bearing: map.getBearing() + Math.max(-30, Math.min(30, pixels * 0.2)) });
 		};
-		map.getCanvas().addEventListener('wheel', rotateWheel, { passive: false, capture: true });
+		if (interactive) map.getCanvas().addEventListener('wheel', rotateWheel, { passive: false, capture: true });
 		map.once('remove', () => map.getCanvas().removeEventListener('wheel', rotateWheel, true));
 		return new Promise((resolve) => map.once('load', () => resolve(map)));
 	}
@@ -559,11 +560,10 @@
 		if (mapB) return mapB;
 		if (!mapBReady) {
 			const generation = mapBGeneration;
-			mapBReady = createMap(mapElB, mapA.getCenter(), mapA.getZoom()).then((m) => {
+			mapBReady = createMap(mapElB, mapA.getCenter(), mapA.getZoom(), false).then((m) => {
 				if (generation !== mapBGeneration) { m.remove(); throw new Error('Comparison map superseded'); }
 				m.jumpTo({ bearing: mapA.getBearing(), pitch: mapA.getPitch() });
-				m.on('click', (e) => queryPoint(e.lngLat.lat, e.lngLat.lng));
-				m.on('move', () => sync(m, mapA));
+				// B は表示専用。左右どちらの入力も背面の A が扱い、A → B のみ同期する。
 				const updB = () => { tilesLoadingB = !m.areTilesLoaded(); updateImageLoaded(m, 'b'); };
 				m.on('dataloading', updB);
 				m.on('data', updB);
@@ -1852,6 +1852,7 @@
 		align-items: center;
 		padding: 0.3rem 0.55rem;
 	}
+	.mapB { pointer-events: none; }
 	.mapB.hidden {
 		visibility: hidden;
 	}
