@@ -132,3 +132,13 @@ while((n=w.nextNode())){const s=n.textContent.trim(); if(s&&jp.test(s)) out.push
 | Esri World Imagery | 衛星写真ベースマップ | ○ | 選択時のみ |
 | AWS Terrain Tiles (terrarium) | 3D 標高 | ○ | 選択時のみ、キー不要 |
 | CelesTrak `gp.php` | TLE | ○ | 同じデータの再取得は 2 時間以上空ける（6 時間キャッシュ + 同梱スナップショット） |
+
+
+## 場所検索と長期間比較（2026-10-24）
+
+- `src/lib/location.ts`: 小数座標の解析・範囲チェックとPhoton検索。`src/lib/LocationSearch.svelte`: 検索フォーム・候補・メッセージ（日英）。地名リクエストはユーザー送信時のみ、短時間連打を制限し、結果をメモリにキャッシュする。
+- `VITE_GEOCODER_URL`（任意）: Photon互換 `/api/` エンドポイント。既定 `https://photon.komoot.io/api/`。公開サービスは少量利用向け。切替時はCORSと帰属を確認。既定インスタンスは日本語言語指定が非対応のため `ja` を送らない。
+- `src/lib/archive.ts`: 日付入力検証・STACリクエスト・ページ取得（GET/POSTの次リンク）。旧 `searchItems()` は他の利用者との互換用に残すが、06は新APIを使用。
+- 場所を選んだら `resetStudy()` で古い地域・A/B・年次結果を破棄して地図移動・再検索。検索と追加取得は同じ AbortController/version を使う。並行する古い結果を採用しない。
+- アーカイブ下限は collection metadata の2015-06-27。年次上限は固定の9/10年にせず現在年から計算。スライダーの最古日には年次カードも含める。
+- 確認対象: 山・川・住所・郵便番号の候補表示、座標入力順/ラベル/不正値、場所選択後の地図とシーンの一致、全アーカイブ・古い順・追加ページ、最古/最新のA/B、条件変更中に古い応答が混ざらないこと。画像の取得可能年は地点ごとに異なる。

@@ -7,6 +7,9 @@
 	import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 	import type * as GeoJSON from 'geojson';
 	import Compass from '$lib/Compass.svelte';
+	import LocationSearch from '$lib/LocationSearch.svelte';
+	import type { LocationResult } from '$lib/location';
+	import { ARCHIVE_START, todayUtc, sceneRequest, fetchScenePage, type SceneRequest } from '$lib/archive';
 	import { searchAnnual, manualSelect, reselectByRegion, inFootprint, type AnnualScene } from '$lib/annual';
 	import { sclReason, invalidShare, SCL_INVALID_CLASSES, type SclSummary, type SclReason } from '$lib/scl';
 	import { installCogProtocol, registerCogLayer, unregisterCogLayer, setTileListener, type TileProgress } from '$lib/cog-protocol';
@@ -35,7 +38,6 @@
 		indices,
 		places,
 		assetsFor,
-		searchItems,
 		fetchItem,
 		pointValues,
 		indexFromDn,
@@ -62,7 +64,17 @@
 	let syncing = false;
 
 	// ---- 検索 ----
-	let days = $state(90);
+	const today = todayUtc();
+	let searchFrom = $state(new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10));
+	let searchTo = $state(today);
+	const days = $derived(Math.max(1, Math.ceil((Date.now() - (Date.parse(searchFrom + 'T00:00:00Z') || Date.now() - 365 * 86400000)) / 86400000)));
+	let oldestFirst = $state(false);
+	let nextScenes = $state<SceneRequest | null>(null);
+	let endpointsOnly = $state(false);
+	let searchController: AbortController | undefined;
+	let mapReady = $state(false);
+	let located = $state<LocationResult | null>(null);
+	const archiveYears = new Date().getUTCFullYear() - Number(ARCHIVE_START.slice(0, 4)) + 1;
 	let maxCloud = $state(30);
 	let loading = $state(false);
 	let error = $state('');
@@ -134,7 +146,7 @@
 	let annualBbox = $state<[number, number, number, number] | null>(null);
 	let maxInvalidPct = $state(20);
 	const REGION_GRID = 150;
-	let yearlyYears = $state(8);
+	let yearlyYears = $state(archiveYears);
 	let yearlyLoading = $state(false);
 
 	// ---- 表示 ----
@@ -209,7 +221,10 @@
 	let switched = $state<{ date: string; sat: string } | null>(null);
 	let switchedTimer: ReturnType<typeof setTimeout> | undefined;
 	/** スライダーの範囲 [分]: 過去側は検索期間（シーンの撮影時刻が必ず入る）、未来側は +10 日（パス予測と同じ） */
-	const rangeMin = $derived(-days * 1440);
+	const rangeMin = $derived.by(() => {
+		const dates = [Date.parse(searchFrom + 'T00:00:00Z'), ...items.map(it => Date.parse(it.properties.datetime)), ...yearly.flatMap(row => row.item ? [Date.parse(row.item.properties.datetime)] : [])].filter(Number.isFinite);
+		return Math.min(-days * 1440, (Math.min(...dates) - Date.now()) / 60000);
+	});
 	const RANGE_MAX = 10 * 1440;
 	const offToPct = (off: number) => ((off - rangeMin) / (RANGE_MAX - rangeMin)) * 100;
 	let shownTime = $state(new Date());
@@ -313,6 +328,7 @@
 		mapA.on('moveend', upd);
 		mapA.on('error', onTileError('a'));
 		initOverlays(mapA);
+		mapReady = true;
 
 		// TLE はマップと並行して取得
 		loadTles().then((t) => {
@@ -336,6 +352,8 @@
 	});
 
 	onDestroy(() => {
+		searchController?.abort();
+		locationMarker?.remove();
 		clearInterval(tickTimer);
 		clearTimeout(passDebounce);
 		clearTimeout(switchedTimer);
@@ -590,35 +608,89 @@
 	}
 
 	// ---- 検索・選択 ----
-	async function search() {
+	async function search(more = false) {
 		animationPlaying = false;
-		if (!mapA) return;
+		if (!mapA || (more && !nextScenes)) return;
+		searchController?.abort();
+		const controller = searchController = new AbortController();
 		const version = ++searchVersion;
-		loading = true;
-		error = '';
+		loading = true; error = '';
 		try {
-			// 地図中心の小さな箱で検索すると、中心を覆うタイルだけが返る
-			const c = mapA.getCenter();
-			const d = 0.02;
-			const found = await searchItems([c.lng - d, c.lat - d, c.lng + d, c.lat + d], days, maxCloud);
+			const center = mapA.getCenter(), c = { lat: center.lat, lng: ((center.lng + 180) % 360 + 360) % 360 - 180 }, d = 0.001;
+			const request = more ? nextScenes! : sceneRequest([
+				Math.max(-180, c.lng - d), Math.max(-85.0511, c.lat - d),
+				Math.min(180, c.lng + d), Math.min(85.0511, c.lat + d)
+			], searchFrom, searchTo, maxCloud, oldestFirst);
+			if (!more) { nextScenes = null; items = []; endpointsOnly = false; }
+			const result = await fetchScenePage(request, AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]));
 			if (version !== searchVersion) return;
-			items = found;
+			const unique = new Map((more ? [...items, ...result.items] : result.items).map(it => [it.id, it]));
+			items = [...unique.values()]; nextScenes = result.next;
 			if (seriesSource === 'items' && series.length && point) buildSeries();
-			if (items.length && !items.find((i) => i.id === itemA?.id)) selectA(items[0]);
+			if (!more && items.length && !items.find((i) => i.id === itemA?.id)) selectA(items[0]);
 			if (!items.length) error = t('searchNoScenes');
 		} catch (e) {
-			if (version !== searchVersion) return;
-			error = e instanceof Error ? e.message : String(e);
+			if (version !== searchVersion || controller.signal.aborted) return;
+			error = e instanceof Error && e.message === 'dates' ? t('archiveInvalidDates') : (e instanceof Error ? e.message : String(e));
 		} finally {
 			if (version === searchVersion) loading = false;
 		}
 	}
+
+	/** Two targeted requests reach either end of the selected dates without downloading all intervening metadata. */
+	async function compareEndpoints() {
+		if (!mapA) return;
+		animationPlaying = false; playing = false; timeOffsetMin = 0;
+		searchController?.abort();
+		const controller = searchController = new AbortController();
+		const version = ++searchVersion;
+		loading = true; error = '';
+		try {
+			const center = mapA.getCenter(), c = { lat: center.lat, lng: ((center.lng + 180) % 360 + 360) % 360 - 180 }, d = 0.001;
+			const bbox: [number, number, number, number] = [Math.max(-180,c.lng-d), Math.max(-85.0511,c.lat-d), Math.min(180,c.lng+d), Math.min(85.0511,c.lat+d)];
+			const requests = [true, false].map(order => {
+				const request = sceneRequest(bbox, searchFrom, searchTo, maxCloud, order);
+				request.body!.limit = 1;
+				return fetchScenePage(request, AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]));
+			});
+			const [oldest, newest] = await Promise.all(requests);
+			if (version !== searchVersion) return;
+			const a = oldest.items[0], b = newest.items[0];
+			if (!a || !b) { error = t('searchNoScenes'); return; }
+			endpointsOnly = true; nextScenes = null;
+			items = [...new Map([a, b].map(it => [it.id, it])).values()].sort((a,b) => (Date.parse(a.properties.datetime)-Date.parse(b.properties.datetime)) * (oldestFirst ? 1 : -1));
+			selectA(a); selectB(null);
+			if (b.id !== a.id) selectB(b);
+			else error = t('archiveSingleScene');
+		} catch (e) {
+			if (version !== searchVersion || controller.signal.aborted) return;
+			error = e instanceof Error && e.message === 'dates' ? t('archiveInvalidDates') : String(e);
+		} finally { if (version === searchVersion) loading = false; }
+	}
+
+	function setPeriod(period: number) {
+		searchTo = today;
+		searchFrom = period === 0 ? ARCHIVE_START : new Date(Math.max(Date.parse(ARCHIVE_START), Date.now() - period * 86400000)).toISOString().slice(0, 10);
+	}
+
+	function selectLocation(place: LocationResult) {
+		if (!mapA) return;
+		resetStudy(); selectedArea = ''; located = place;
+		mapA.jumpTo({ center: [place.lon, place.lat], zoom: 12 });
+		const el = document.createElement('div');
+		el.className = 'location-pin'; el.textContent = '📍'; el.title = place.name;
+		locationMarker?.remove();
+		locationMarker = new ml.Marker({ element: el, anchor: 'bottom' }).setLngLat([place.lon, place.lat]).addTo(mapA);
+		search();
+	}
+	let locationMarker: ML.Marker | null = null;
 
 	/** 地図中心で年次シーンを検索し、最も古い年のシーンを A にする */
 	async function searchYear() {
 		animationPlaying = false;
 		if (!mapA) return;
 		const version = ++annualVersion;
+		searchController?.abort(); nextScenes = null;
 		++searchVersion;
 		loading = false;
 		++pointVersion; ++seriesVersion; pointLoading = false; seriesLoading = false;
@@ -652,7 +724,7 @@
 
 	function goto(p: (typeof places)[number]) {
 		if (!mapA) return;
-		resetStudy(); selectedArea = '';
+		resetStudy(); selectedArea = ''; located = null; locationMarker?.remove();
 		mapA.jumpTo({ center: [p.center[1], p.center[0]], zoom: p.zoom });
 		itemB = null;
 		search();
@@ -705,6 +777,8 @@
 	const pct = (n: number, total: number, d = 1) => ((100 * n) / (total || 1)).toFixed(d);
 
 	function resetStudy() {
+		searchController?.abort(); nextScenes = null; endpointsOnly = false;
+		playing = false; timeOffsetMin = 0; selectedPass = null;
 		animationPlaying = false;
 		++annualVersion; ++searchVersion; ++pointVersion; ++seriesVersion; ++layerVersion;
 		pointLoading = false; seriesLoading = false; annualSnapshot = null;
@@ -720,7 +794,7 @@
 	function chooseArea(id: string) {
 		if (!mapA) return;
 		const area = studyAreas.find(a => a.id === id); if (!area) return;
-		resetStudy(); selectedArea = id;
+		resetStudy(); selectedArea = id; located = null; locationMarker?.remove();
 		const b = area.bbox;
 		mapA.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:36,duration:0});
 	}
@@ -978,23 +1052,23 @@
 			const d = Date.parse(it.properties.datetime);
 			if (d > shownTime.getTime() + 60000 && (!next || d < Date.parse(next.properties.datetime))) next = it;
 		}
-		return { age: fmtOffset(ageMin).replace(/^[+−]/, ''), next };
+		return { age: ageMin === 0 ? '0m' : fmtOffset(ageMin).replace(/^[+−]/, ''), future: acq > shownTime.getTime() + 60000, next };
 	});
 
 	/** スライダー上の目盛り: 過去のシーン撮影時刻と未来の予測パス */
 	const timeTicks = $derived.by(() => {
 		const now = Date.now();
-		const out: { off: number; color: string; title: string; kind: 'scene' | 'pass' }[] = [];
+		const out: { id: string; off: number; color: string; title: string; kind: 'scene' | 'pass' }[] = [];
 		for (const it of items) {
 			const off = (Date.parse(it.properties.datetime) - now) / 60000;
 			if (off < rangeMin || off > 0) continue;
 			const sat = SATS.find((x) => x.id === it.properties.platform);
-			out.push({ off, color: sat?.color ?? '#fff', kind: 'scene', title: t('mapTimeTickScene', fmtDate(it.properties.datetime), satLabel(it).split(' ')[0]) });
+			out.push({ id: `scene:${it.id}`, off, color: sat?.color ?? '#fff', kind: 'scene', title: t('mapTimeTickScene', fmtDate(it.properties.datetime), satLabel(it).split(' ')[0]) });
 		}
 		for (const p of imagingPasses) {
 			const off = (p.time.getTime() - now) / 60000;
 			if (off > RANGE_MAX) continue;
-			out.push({ off, color: satMeta(p.sat).color, kind: 'pass', title: t('mapTimeTickPass', fmtJst(p.time), satMeta(p.sat).name.replace('Sentinel-', 'S')) });
+			out.push({ id: `pass:${p.sat}:${p.time.getTime()}`, off, color: satMeta(p.sat).color, kind: 'pass', title: t('mapTimeTickPass', fmtJst(p.time), satMeta(p.sat).name.replace('Sentinel-', 'S')) });
 		}
 		return out;
 	});
@@ -1169,6 +1243,8 @@
 	</p>
 </details>
 
+<LocationSearch ready={mapReady} bind:selected={located} onselect={selectLocation} />
+
 <div class="btn-row">
 	{#each places as p (p.id)}
 		<button class="ghost" onclick={() => goto(p)} title={L(p.hint)}>{L(p.name)}</button>
@@ -1226,7 +1302,7 @@
 					<div class="ticks">
 						<!-- 現在 (LIVE) の位置 -->
 						<span class="now" style:left="{offToPct(0)}%"></span>
-						{#each timeTicks as tk (tk.kind + tk.off)}
+						{#each timeTicks as tk (tk.id)}
 							<button class="tick" class:pass={tk.kind === 'pass'} style:left="{offToPct(tk.off)}%" style:--c={tk.color} title={tk.title} onclick={() => setOffset(Math.ceil(tk.off))} aria-label={tk.title}></button>
 						{/each}
 					</div>
@@ -1237,7 +1313,7 @@
 				{/if}
 				{#if imageAge && itemA}
 					<div class="imgage">
-						<div>{t('mapTimeImage', fmtDate(itemA.properties.datetime), imageAge.age)}</div>
+						<div>{imageAge.future ? t('archiveBeforeFirst', fmtDate(itemA.properties.datetime)) : t('mapTimeImage', fmtDate(itemA.properties.datetime), imageAge.age)}</div>
 						<div class="muted">{imageAge.next ? t('mapTimeNextScene', fmtDate(imageAge.next.properties.datetime), satLabel(imageAge.next).split(' ')[0]) : t('mapTimeNoNext')}</div>
 					</div>
 				{/if}
@@ -1374,20 +1450,29 @@
 
 	<div class="panel">
 		<h3>{t('searchTitle')} <span class="muted" style="font-weight: 400; font-size: 0.8rem">{t('searchSub')}</span></h3>
-		<div class="control">
-			<label for="days">{t('searchDays')}</label>
-			<output>{t('searchDaysOut', days)}</output>
-			<input id="days" type="range" min="14" max="730" step="7" bind:value={days} />
+		<p class="muted archive-note">{t('archiveHelp')}</p>
+		<div class="archive-dates">
+			<label for="archive-from">{t('archiveFrom')}<input id="archive-from" type="date" min={ARCHIVE_START} max={searchTo || today} bind:value={searchFrom} /></label>
+			<label for="archive-to">{t('archiveTo')}<input id="archive-to" type="date" min={searchFrom || ARCHIVE_START} max={today} bind:value={searchTo} /></label>
 		</div>
+		<div class="btn-row">
+			{#each [90, 365, 365 * 5, 0] as period (period)}
+				<button class="ghost" onclick={() => setPeriod(period)}>{t('archivePeriod', period)}</button>
+			{/each}
+		</div>
+		<label class="archive-sort">{t('archiveSort')} <select bind:value={oldestFirst}><option value={false}>{t('archiveNewest')}</option><option value={true}>{t('archiveOldest')}</option></select></label>
 		<div class="control">
 			<label for="cc">{t('searchCloud')}</label>
-			<output>&lt; {maxCloud}%</output>
+			<output>≤ {maxCloud}%</output>
 			<input id="cc" type="range" min="0" max="100" step="5" bind:value={maxCloud} />
 		</div>
-		<button onclick={search} disabled={loading}>{loading ? t('searchBtnBusy') : t('searchBtn')}</button>
+		<button onclick={() => search()} disabled={loading}>{loading ? t('searchBtnBusy') : t('searchBtn')}</button>
+		<button class="ghost" onclick={compareEndpoints} disabled={loading || !mapReady}>{t('archiveCompareEnds')}</button>
 		<p class="muted" style="font-size: 0.8rem; margin-top: 0.6rem">
 			{t('searchCount', items.length)}<strong>A</strong>{t('searchCountRest')}
 		</p>
+		<p class="muted archive-note" aria-live="polite">{loading ? t('searchBtnBusy') : endpointsOnly ? t('archiveEndpointsNote') : t('archiveLoaded', items.length, !!nextScenes)}</p>
+		{#if nextScenes}<button class="ghost" disabled={loading} onclick={() => search(true)}>{loading ? t('searchBtnBusy') : t('archiveMore')}</button>{/if}
 		<div class="strip">
 			{#each items as it (it.id)}
 				<div class="scene" class:a={itemA?.id === it.id} class:b={itemB?.id === it.id}>
@@ -1424,7 +1509,7 @@
 		<div class="control">
 			<label for="yy">{t('yearlyYears')}</label>
 			<output>{yearlyYears}</output>
-			<input id="yy" type="range" min="2" max="9" step="1" bind:value={yearlyYears} />
+			<input id="yy" type="range" min="2" max={archiveYears} step="1" bind:value={yearlyYears} />
 		</div>
 		<button onclick={searchYear} disabled={yearlyLoading}>{yearlyLoading ? t('searchBtnBusy') : t('yearlyBtn')}</button>
 		<p class="muted" style="font-size: 0.8rem; margin-top: 0.6rem">{t('annualHelp')}</p>
@@ -1711,6 +1796,12 @@
 </div>
 
 <style>
+	.archive-dates { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.6rem 0; }
+	.archive-dates label { display: flex; flex-direction: column; gap: 0.2rem; flex: 1; min-width: 140px; font-size: 0.85rem; }
+	.archive-dates input { min-width: 0; width: 100%; }
+	.archive-note { font-size: 0.78rem; }
+	.archive-sort { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; font-size: 0.85rem; margin-bottom: 0.8rem; }
+
 	#annual-controls { grid-column: 1 / -1; min-width: 0; scroll-margin-top: 1rem; }
 	#annual-controls .control { max-width: 640px; }
 	#annual-controls .scene { width: 190px; }

@@ -1,4 +1,5 @@
 import type { StacItem } from './imagery';
+const FIRST_YEAR = 2015;
 import { invalidShare, type SclSummary } from './scl.ts';
 
 export type AnnualOptions = { monthDay: string; years: number; maxCloud: number; tolerance: number; allowMissing: boolean; now?: Date };
@@ -32,11 +33,11 @@ export function chooseAnnual(items: StacItem[], year: number, options: AnnualOpt
 }
 export async function searchAnnual(bbox: [number,number,number,number], options: AnnualOptions): Promise<AnnualScene[]> {
  const now=options.now??new Date();
- if (!Number.isInteger(options.years)||options.years<1||options.years>10||!Number.isInteger(options.tolerance)||options.tolerance<0||options.tolerance>31||!Number.isFinite(options.maxCloud)||options.maxCloud<0||options.maxCloud>100) throw new Error('Invalid search options');
+ if (!Number.isInteger(options.years)||options.years<1||options.years>(options.now??new Date()).getUTCFullYear()-FIRST_YEAR+1||!Number.isInteger(options.tolerance)||options.tolerance<0||options.tolerance>31||!Number.isFinite(options.maxCloud)||options.maxCloud<0||options.maxCloud>100) throw new Error('Invalid search options');
  // Validate month/day using a leap year; each non-leap year may legitimately be missing.
  targetTime(2024, options.monthDay);
  const results: AnnualScene[]=[];
- for(let year=now.getUTCFullYear();year>=2017 && results.length<options.years;year--){
+ for(let year=now.getUTCFullYear();year>=FIRST_YEAR && results.length<options.years;year--){
   let t:number;
   try { t=targetTime(year,options.monthDay); } catch {results.push(chooseAnnual([],year,options));continue;}
   if(t>now.getTime())continue;

@@ -2,6 +2,18 @@ import type { Bilingual } from './lang.svelte';
 
 export const imagery = {
 	ja: {
+		archiveHelp: 'Sentinel-2 アーカイブを日付で検索（収録開始: 2015-06-27）。地域・撮影日によって欠測があります。結果は100件ずつ取得します。',
+		archiveBeforeFirst: (date: string) => `この時刻以前のシーンは未取得です。表示中は ${date} の画像。古い結果を追加取得するか、日付範囲・雲量を変えて再検索してください。`,
+		archiveFrom: '開始日 (UTC)', archiveTo: '終了日 (UTC)',
+		archivePeriod: (n: number) => n === 0 ? '全アーカイブ' : n === 90 ? '90日' : n === 365 ? '1年' : '5年',
+		archiveSort: '撮影日の順序', archiveNewest: '新しい順', archiveOldest: '古い順',
+		archiveMore: 'さらに100件を読み込む',
+		archiveCompareEnds: '期間内の最古と最新を A/B 比較',
+		archiveSingleScene: 'この条件で見つかった撮影は1件のみです。期間や雲量上限を広げてください。',
+		archiveEndpointsNote: '期間の両端を比較しています。中間の全シーンを取得するには再検索し、追加取得してください。',
+		archiveLoaded: (n: number, more: boolean) => `${n} 件を読み込み済み。${more ? 'まだ結果があります。追加取得で比較・再生できる時期を広げられます。' : 'この条件の検索結果をすべて取得しました。'}`,
+		archiveInvalidDates: '日付を確認してください。開始日は 2015-06-27 以降、終了日は今日まで、開始日 ≤ 終了日で指定してください。',
+
 		title: '実画像を見る — Satellite Data Lab',
 		h1: '06 実画像を見る',
 		lead1: 'Sentinel-2 の実データを地図上でその場レンダリングします。サーバーはありません——',
@@ -11,7 +23,7 @@ export const imagery = {
 		// ---- 使い方 ----
 		howtoTitle: '使い方',
 		howtoToggle: '（クリックで開閉）',
-		howto1: '<strong>場所を選ぶ</strong> — 下のボタン（東京・富士山…）か、地図をドラッグして「現在の地図中心で再検索」。地図中心を含む Sentinel-2 シーンが最新順に並びます。',
+		howto1: '<strong>場所を選ぶ</strong> — 場所検索に山・川・地域・市町村名・住所・郵便番号・座標を入力し、候補を選択。地図が移動して衛星画像を検索します。座標の順序は選択できます。地名が見つからないときは地域・国を添えるか座標を入力してください。',
 		howto2: '<strong>シーンを選ぶ</strong> — サムネイルをクリックすると <strong>A</strong>（表示レイヤー）に。雲の少ない日付を選ぶのがコツです（☁ は シーン全体の雲量 (cloud cover)）。',
 		howto3: '<strong>表示モードを切り替える</strong> — 「トゥルーカラー」で地形を掴んでから「フォールスカラー」「NDVI」に切り替え、同じ場所の見え方の違いを比べてください。初回はタイル取得に数秒かかります（COG を直接読んでいるため）。2 回目以降はキャッシュで即時です。',
 		howto4: '<strong>3D で見る</strong> — 地図右上の「3D」で標高データを重ねて傾けます。右ドラッグ（または Ctrl+ドラッグ）で回転・傾き、コンパスをクリックすると北が上に戻ります。コンパスには <span style="color: #f1fa8c">☀ 撮影時の太陽方位 (sun azimuth)</span>と<span style="color: var(--green)">▲ 衛星の進行方向</span>も出ます。雲の影は ☀ の反対側に落ちます。',
@@ -287,6 +299,18 @@ export const imagery = {
 		compassAria: 'コンパス。クリックで北を上に'
 	},
 	en: {
+		archiveHelp: 'Search the Sentinel-2 archive by date (collection starts 2015-06-27). Coverage varies by location and acquisition date. Results load 100 scenes at a time.',
+		archiveBeforeFirst: (date: string) => `No scene at or before this time is loaded. Showing the image from ${date}. Load older results, or change the dates/cloud limit and search again.`,
+		archiveFrom: 'Start date (UTC)', archiveTo: 'End date (UTC)',
+		archivePeriod: (n: number) => n === 0 ? 'Full archive' : n === 90 ? '90 days' : n === 365 ? '1 year' : '5 years',
+		archiveSort: 'Acquisition order', archiveNewest: 'Newest first', archiveOldest: 'Oldest first',
+		archiveMore: 'Load 100 more scenes',
+		archiveCompareEnds: 'Compare oldest and newest in range',
+		archiveSingleScene: 'Only one acquisition was found. Widen the dates or cloud limit to compare two dates.',
+		archiveEndpointsNote: 'Comparing the ends of the selected dates. Search again and load more to include all intervening scenes.',
+		archiveLoaded: (n: number, more: boolean) => `${n} scenes loaded. ${more ? 'More results are available. Load more to extend the dates available for comparison and playback.' : 'All results for this query have been loaded.'}`,
+		archiveInvalidDates: 'Check the dates: start on or after 2015-06-27, end no later than today, and start before or on end.',
+
 		title: 'Real Imagery — Satellite Data Lab',
 		h1: '06 Real Imagery',
 		lead1: 'Real Sentinel-2 data rendered on the map, on the fly. There is no server — ',
@@ -296,7 +320,7 @@ export const imagery = {
 		// ---- How to ----
 		howtoTitle: 'How to use',
 		howtoToggle: ' (click to expand/collapse)',
-		howto1: '<strong>Pick a place</strong> — use the buttons below (Tokyo, Mt. Fuji…) or drag the map and hit “Search again at map centre”. Sentinel-2 scenes covering the map centre are listed newest first.',
+		howto1: '<strong>Choose a place</strong> — Search for a mountain, river, area, city, town, address, postal code or coordinates, then choose a result. The map moves there and searches for imagery. Select the coordinate order explicitly. If a name is not found, add a region or country, or enter coordinates.',
 		howto2: '<strong>Pick a scene</strong> — click a thumbnail to make it <strong>A</strong> (the displayed layer). Choose a date with little cloud (☁ is the scene-wide cloud cover).',
 		howto3: '<strong>Switch render mode</strong> — get your bearings in “True color”, then switch to “False color” and “NDVI” and compare how the same place looks. The first load takes a few seconds (the COG is read directly); later loads are instant from cache.',
 		howto4: '<strong>View in 3D</strong> — “3D” at the top right of the map overlays elevation data and tilts the view. Right-drag (or Ctrl+drag) to rotate and tilt; click the compass to return north to the top. The compass also shows <span style="color: #f1fa8c">☀ sun azimuth at acquisition</span> and <span style="color: var(--green)">▲ satellite heading</span>. Cloud shadows fall on the side opposite ☀.',
