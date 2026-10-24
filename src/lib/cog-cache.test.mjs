@@ -44,19 +44,19 @@ test('internal tiles deduplicate pending reads, reuse warm data, and retain acti
   let calls = 0, complete;
   const img = image(async ({ window: [x] }) => {
     calls++;
-    if (x === 99) return new Promise(resolve => { complete = resolve; });
+    if (x === 999) return new Promise(resolve => { complete = resolve; });
     // Keep data small while exceeding the completed-tile count limit.
     return [new Uint8Array([42])];
   });
   const info = { images: [img] };
-  const pending = cog.getInternalTile(info, 'scene', 0, 99, 0);
-  assert.equal(pending, cog.getInternalTile(info, 'scene', 0, 99, 0));
+  const pending = cog.getInternalTile(info, 'scene', 0, 999, 0);
+  assert.equal(pending, cog.getInternalTile(info, 'scene', 0, 999, 0));
   for (let x = 0; x < 128; x++) await cog.getInternalTile(info, 'scene', 0, x, 0);
-  assert.equal(pending, cog.getInternalTile(info, 'scene', 0, 99, 0));
+  assert.equal(pending, cog.getInternalTile(info, 'scene', 0, 999, 0));
   complete([{ length: 1, 0: 42 }]);
   const tile = await pending;
-  assert.equal((await cog.getInternalTile(info, 'scene', 0, 99, 0)).data[0][0], 42);
-  assert.equal(await cog.getInternalTile(info, 'scene', 0, 99, 0), tile);
+  assert.equal((await cog.getInternalTile(info, 'scene', 0, 999, 0)).data[0][0], 42);
+  assert.equal(await cog.getInternalTile(info, 'scene', 0, 999, 0), tile);
   const before = calls;
   await cog.getInternalTile(info, 'scene', 0, 0, 0);
   assert.equal(calls, before + 1, 'old data is evicted to respect the tile-count limit');
