@@ -3,7 +3,7 @@
  * geotiff.js が HTTP Range Request で必要なタイルだけ取得する。
  * Sentinel-2 L2A（UTM 投影）を Web メルカトルのタイルに再投影して描く。
  */
-import { fromUrl, Pool, type GeoTIFF, type GeoTIFFImage } from 'geotiff';
+import { fromCustomClient, BaseClient, BaseResponse, Pool, type GeoTIFF, type GeoTIFFImage } from 'geotiff';
 
 /** メインスレッドで使う場合のみ Web Worker でデフレート展開を並列化（Worker 内では入れ子にしない） */
 const pool = typeof window !== 'undefined' && typeof Worker !== 'undefined' ? new Pool() : undefined;
@@ -101,6 +101,50 @@ export function tileUtm(x: number, y: number, z: number, size: number, epsg: num
 }
 
 // ---- COG ----
+/** Cache only the small immutable header prefix. Pixel ranges remain exact reads.
+ * geotiff's general block LRU can evict data needed by concurrent large reads.
+ */
+export class HeaderRangeClient extends BaseClient {
+	private header?: Promise<{ data: ArrayBuffer; total?: string }>;
+	private async prefix() {
+		if (!this.header) {
+			this.header = (async () => {
+				const response = await fetch(this.url, { headers: { Range: 'bytes=0-65535' } });
+				const range = response.headers.get('content-range')?.match(/^bytes 0-(\d+)\/(\d+)$/);
+				if (response.status !== 206 || (range && Number(range[1]) >= 65536)) {
+					await response.body?.cancel();
+					throw new Error('COG server must support HTTP Range requests');
+				}
+				// S3 CORS can hide Content-Range; 206 still confirms a partial response.
+				const data = await response.arrayBuffer();
+				if (!data.byteLength || data.byteLength > 65536) throw new Error('Invalid COG header range length');
+				return { data, total: range?.[2] };
+			})();
+			void this.header.catch(() => { this.header = undefined; });
+		}
+		return this.header;
+	}
+	async request({ headers, signal }: RequestInit = {}): Promise<BaseResponse> {
+		signal?.throwIfAborted();
+		const range = new Headers(headers).get('range')?.match(/^bytes=(\d+)-(\d+)$/);
+		if (range && Number(range[2]) < 65536) {
+			const prefix = await this.prefix();
+			signal?.throwIfAborted();
+			const start = Number(range[1]), end = Math.min(Number(range[2]) + 1, prefix.data.byteLength);
+			return new CogRangeResponse(new Response(prefix.data.slice(start, end), {
+				status: 206, headers: prefix.total ? { 'content-range': `bytes ${start}-${end - 1}/${prefix.total}` } : {}
+			}));
+		}
+		return new CogRangeResponse(await fetch(this.url, { headers, signal }));
+	}
+}
+class CogRangeResponse extends BaseResponse {
+	constructor(private response: Response) { super(); }
+	get status() { return this.response.status; }
+	getHeader(name: string) { return this.response.headers.get(name) ?? undefined; }
+	getData() { return this.response.arrayBuffer(); }
+}
+
 type CogInfo = {
 	tiff: GeoTIFF;
 	images: GeoTIFFImage[]; // 0 = フル解像度、以降オーバービュー
@@ -124,7 +168,8 @@ export function openCog(href: string): Promise<CogInfo> {
 	if (p) { cache.delete(href); cache.set(href, p); }
 	if (!p) {
 		p = (async () => {
-			const tiff = await fromUrl(href, { allowFullFile: false });
+			// ヘッダーのみ64 KiBを共有し、大きな画素Rangeの過剰取得・並行LRU競合を避ける。
+			const tiff = await fromCustomClient(new HeaderRangeClient(href), { allowFullFile: false });
 			const count = await tiff.getImageCount();
 			const images: GeoTIFFImage[] = [];
 			for (let i = 0; i < count; i++) images.push(await tiff.getImage(i));
@@ -167,25 +212,36 @@ function pickLevel(cog: CogInfo, targetRes: number): { level: number; img: GeoTI
 // ---- デコード済み内部タイルのキャッシュ ----
 // COG の内部タイル（512 or 1024 px）単位で読む＆デコードし、隣接する地図タイルが再利用する。
 type Decoded = { data: ArrayLike<number>[]; w: number; h: number; x0: number; y0: number };
-const tileCache = new Map<string, Promise<Decoded>>();
-const TILE_CACHE_MAX = 120; // 512² × uint16 ≈ 0.5 MB/枚
+// 元と同じ120枚を保持し、取得中の共有Promiseは追い出さない。
+const tileCache = new Map<string, Decoded>();
+const tileInFlight = new Map<string, Promise<Decoded>>();
+const TILE_CACHE_MAX = 120;
 
 function getInternalTile(cog: CogInfo, href: string, level: number, tx: number, ty: number): Promise<Decoded> {
 	const key = `${href}|${level}|${tx}|${ty}`;
-	let p = tileCache.get(key);
-	if (p) return p;
+	const hit = tileCache.get(key);
+	if (hit) {
+		tileCache.delete(key);
+		tileCache.set(key, hit);
+		return Promise.resolve(hit);
+	}
+	const existing = tileInFlight.get(key);
+	if (existing) return existing;
 	const img = cog.images[level];
 	const tw = img.getTileWidth();
 	const th = img.getTileHeight();
 	const x0 = tx * tw, y0 = ty * th;
 	const x1 = Math.min(x0 + tw, img.getWidth());
 	const y1 = Math.min(y0 + th, img.getHeight());
-	p = img
+	const p = img
 		.readRasters({ window: [x0, y0, x1, y1], interleave: false, pool })
 		.then((r) => ({ data: r as unknown as ArrayLike<number>[], w: x1 - x0, h: y1 - y0, x0, y0 }));
-	if (tileCache.size >= TILE_CACHE_MAX) tileCache.delete(tileCache.keys().next().value!);
-	tileCache.set(key, p);
-	p.catch(() => tileCache.delete(key));
+	tileInFlight.set(key, p);
+	void p.then((tile) => {
+		tileInFlight.delete(key);
+		if (tileCache.size >= TILE_CACHE_MAX) tileCache.delete(tileCache.keys().next().value!);
+		tileCache.set(key, tile);
+	}, () => { tileInFlight.delete(key); });
 	return p;
 }
 
