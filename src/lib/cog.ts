@@ -124,7 +124,9 @@ export function openCog(href: string): Promise<CogInfo> {
 	if (p) { cache.delete(href); cache.set(href, p); }
 	if (!p) {
 		p = (async () => {
-			const tiff = await fromUrl(href, { allowFullFile: false });
+			// 隣接タイルとIFDヘッダーの重複Range取得をまとめる（1 COGあたり最大1 MiB）。
+			const sourceOptions = { allowFullFile: false, blockSize: 65536, cacheSize: 16 };
+			const tiff = await fromUrl(href, sourceOptions);
 			const count = await tiff.getImageCount();
 			const images: GeoTIFFImage[] = [];
 			for (let i = 0; i < count; i++) images.push(await tiff.getImage(i));
@@ -167,25 +169,46 @@ function pickLevel(cog: CogInfo, targetRes: number): { level: number; img: GeoTI
 // ---- デコード済み内部タイルのキャッシュ ----
 // COG の内部タイル（512 or 1024 px）単位で読む＆デコードし、隣接する地図タイルが再利用する。
 type Decoded = { data: ArrayLike<number>[]; w: number; h: number; x0: number; y0: number };
-const tileCache = new Map<string, Promise<Decoded>>();
-const TILE_CACHE_MAX = 120; // 512² × uint16 ≈ 0.5 MB/枚
+// 完了済みデータはバイト数で制限し、取得中の共有Promiseは追い出さない。
+const tileCache = new Map<string, Decoded>();
+const tileInFlight = new Map<string, Promise<Decoded>>();
+const TILE_CACHE_BYTES = 32 * 1024 * 1024;
+let tileCacheBytes = 0;
+const decodedBytes = (tile: Decoded) => tile.data.reduce((sum, band) =>
+	sum + (ArrayBuffer.isView(band) ? band.byteLength : band.length * 8), 0);
 
 function getInternalTile(cog: CogInfo, href: string, level: number, tx: number, ty: number): Promise<Decoded> {
 	const key = `${href}|${level}|${tx}|${ty}`;
-	let p = tileCache.get(key);
-	if (p) return p;
+	const hit = tileCache.get(key);
+	if (hit) {
+		tileCache.delete(key);
+		tileCache.set(key, hit);
+		return Promise.resolve(hit);
+	}
+	const existing = tileInFlight.get(key);
+	if (existing) return existing;
 	const img = cog.images[level];
 	const tw = img.getTileWidth();
 	const th = img.getTileHeight();
 	const x0 = tx * tw, y0 = ty * th;
 	const x1 = Math.min(x0 + tw, img.getWidth());
 	const y1 = Math.min(y0 + th, img.getHeight());
-	p = img
+	const p = img
 		.readRasters({ window: [x0, y0, x1, y1], interleave: false, pool })
 		.then((r) => ({ data: r as unknown as ArrayLike<number>[], w: x1 - x0, h: y1 - y0, x0, y0 }));
-	if (tileCache.size >= TILE_CACHE_MAX) tileCache.delete(tileCache.keys().next().value!);
-	tileCache.set(key, p);
-	p.catch(() => tileCache.delete(key));
+	tileInFlight.set(key, p);
+	void p.then((tile) => {
+		tileInFlight.delete(key);
+		const bytes = decodedBytes(tile);
+		if (bytes > TILE_CACHE_BYTES) return;
+		while (tileCacheBytes + bytes > TILE_CACHE_BYTES && tileCache.size) {
+			const oldest = tileCache.keys().next().value!;
+			tileCacheBytes -= decodedBytes(tileCache.get(oldest)!);
+			tileCache.delete(oldest);
+		}
+		tileCache.set(key, tile);
+		tileCacheBytes += bytes;
+	}, () => { tileInFlight.delete(key); });
 	return p;
 }
 
