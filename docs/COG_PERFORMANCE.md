@@ -250,3 +250,25 @@ when measuring shared hits. Verify cache-response bytes against direct-origin
 SHA-256, then regional TCI/NDVI image ROIs, A/B sync, fixed compass turns and
 rapid mode/scene changes. The previous worker-locality timings above do not
 establish shared-cache performance. Merge is pending that verification.
+
+Deployed-preview HTTP verification (2026-10-26 JST, source 152028f): separate
+CLI requests confirmed server-side MISS→HIT, with exact SHA-256 equality to
+S3 for both 1 MiB probes (bytes 1024–1049599):
+
+| Band | MISS total / TTFB | HIT total / TTFB |
+| --- | ---: | ---: |
+| B04 | 2.137 / 1.279 s | 0.550 / 0.169 s |
+| B08 | 1.541 / 0.658 s | 0.821 / 0.179 s |
+
+These are single HTTP probes, not whole-map measurements. CLI startup is
+excluded. Full raw sanitized results remain at `docs/testing/shared-cog-http.json`.
+Run `python3 scripts/verify-shared-cog-cache.py <deployment-url>` to repeat;
+existing Vercel CLI authentication is required for protected previews. Repeating
+an already-warmed URL will report HIT for the first request too; do not label
+that run cold. Do not purge unrelated caches to force a cold result.
+
+34 tests, zero Svelte diagnostics, local production build and Vercel preview
+build passed. Antigravity computer-use calls repeatedly timed out, so browser
+cold/warm timings and shared-cache image regressions remain unverified.
+PR #13 remains a draft; no merge or production deployment is authorized by
+these HTTP-only results as a substitute for the requested acceptance tests.
