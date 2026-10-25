@@ -104,12 +104,45 @@ export function tileUtm(x: number, y: number, z: number, size: number, epsg: num
 /** Cache only the small immutable header prefix. Pixel ranges remain exact reads.
  * geotiff's general block LRU can evict data needed by concurrent large reads.
  */
+const COG_ORIGIN = 'https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/';
+const SHARED_RANGE_MAX = 4 * 1024 * 1024;
+
+/** Cache exact source bytes across visitors; retain direct-origin recovery on cache failure. */
+export async function fetchCogRange(href: string, init: RequestInit = {}): Promise<Response> {
+	const range = new Headers(init.headers).get('range')?.match(/^bytes=(\d+)-(\d+)$/);
+	if (typeof location === 'undefined' || !href.startsWith(COG_ORIGIN) || !range) return fetch(href, init);
+	const start = Number(range[1]), end = Number(range[2]);
+	if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) return fetch(href, init);
+	try {
+		const chunks = await Promise.all(Array.from({ length: Math.ceil((end - start + 1) / SHARED_RANGE_MAX) }, async (_, i) => {
+			const a = start + i * SHARED_RANGE_MAX, b = Math.min(end, a + SHARED_RANGE_MAX - 1);
+			const url = new URL(`/api/cog/v1/${a}-${b}/${href.slice(COG_ORIGIN.length)}`, location.origin);
+			const response = await fetch(url, { signal: init.signal });
+			const actual = response.headers.get('x-cog-range')?.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+			if (response.status !== 200 || !actual || Number(actual[1]) !== a || Number(actual[2]) !== b || Number(actual[3]) <= b) {
+				await response.body?.cancel();
+				throw new Error('Invalid shared COG range');
+			}
+			const data = await response.arrayBuffer();
+			if (data.byteLength !== b - a + 1) throw new Error('Truncated shared COG range');
+			return { data, total: actual[3] };
+		}));
+		if (chunks.some(c => c.total !== chunks[0].total)) throw new Error('Inconsistent COG ranges');
+		return new Response(new Blob(chunks.map(c => c.data)), { status: 206, headers: {
+			'content-range': `bytes ${start}-${end}/${chunks[0].total}`
+		} });
+	} catch (error) {
+		init.signal?.throwIfAborted();
+		return fetch(href, init);
+	}
+}
+
 export class HeaderRangeClient extends BaseClient {
 	private header?: Promise<{ data: ArrayBuffer; total?: string }>;
 	private async prefix() {
 		if (!this.header) {
 			this.header = (async () => {
-				const response = await fetch(this.url, { headers: { Range: 'bytes=0-65535' } });
+				const response = await fetchCogRange(this.url, { headers: { Range: 'bytes=0-65535' } });
 				const range = response.headers.get('content-range')?.match(/^bytes 0-(\d+)\/(\d+)$/);
 				if (response.status !== 206 || (range && Number(range[1]) >= 65536)) {
 					await response.body?.cancel();
@@ -135,7 +168,7 @@ export class HeaderRangeClient extends BaseClient {
 				status: 206, headers: prefix.total ? { 'content-range': `bytes ${start}-${end - 1}/${prefix.total}` } : {}
 			}));
 		}
-		return new CogRangeResponse(await fetch(this.url, { headers, signal }));
+		return new CogRangeResponse(await fetchCogRange(this.url, { headers, signal }));
 	}
 }
 class CogRangeResponse extends BaseResponse {
