@@ -61,5 +61,6 @@ export const modules: Module[] = [
 			en: 'Real Sentinel-2 data rendered on a 3D map by reading COGs directly in the browser. Composites, NDVI and other indices, two-date swipe comparison, per-pixel DN and time series, plus live satellite orbits from real TLEs and next-acquisition prediction.'
 		},
 		keywords: ['MapLibre GL', 'geotiff.js', 'COG', 'NDVI', '3D', 'TLE']
-	}
+	},
+	{path:'/field',title:{ja:'農場・自然環境の調査',en:'Farm & Natural-area Study'},summary:{ja:'農場・保護区・湿地・山地の境界内で植生・水分・裸地の時系列と同一地点の差分を調べ、現地確認につなげます。',en:'Study vegetation, moisture and bare-soil time series and paired changes within farm, reserve, wetland and mountain boundaries.'},keywords:['AOI','Austin','Farm','NDVI','NDMI','Wildlife']}
 ];

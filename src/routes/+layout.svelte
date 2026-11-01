@@ -2,10 +2,12 @@
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
+	import { browser } from '$app/environment';
 	import { modules } from '$lib/modules';
 	import { i18n, setLang, L, LANGS } from '$lib/i18n/lang.svelte';
 
 	let { children } = $props();
+	$effect(() => { if (browser) document.documentElement.lang = i18n.lang; });
 </script>
 
 <svelte:head>

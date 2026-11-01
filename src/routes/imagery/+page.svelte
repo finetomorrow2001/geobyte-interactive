@@ -357,6 +357,10 @@
 				const it = await fetchItem(preset);
 				items = [it];
 				selectA(it);
+                const compare=page.url.searchParams.get('compare');
+                if(compare&&compare!==it.id){const other=await fetchItem(compare);items=[it,other];selectB(other);}
+                const box=page.url.searchParams.get('bbox')?.split(',').map(Number);
+                if(box?.length===4&&box.every(Number.isFinite)&&box[0]>=-180&&box[2]<=180&&box[1]>=-80&&box[3]<=84&&box[0]<box[2]&&box[1]<box[3])mapA.fitBounds([[box[0],box[1]],[box[2],box[3]]],{padding:36,duration:0});
 			} catch (e) {
 				error = e instanceof Error ? e.message : String(e);
 			}
