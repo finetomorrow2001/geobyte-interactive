@@ -445,3 +445,20 @@ export function colormap(name: string, t: number): [number, number, number] {
 	const last = stops[stops.length - 1];
 	return [last[1], last[2], last[3]];
 }
+
+/** Full-resolution nearest samples at explicit WGS84 locations; missing values stay NaN. */
+export async function sampleLocations(href: string, epsg: number, points: [number,number][]): Promise<number[]> {
+ const cog=await openCog(href),img=cog.images[0],tw=img.getTileWidth(),th=img.getTileHeight();
+ const cells=points.map(([lon,lat])=>{
+  const [e,n]=lonLatToUtm(lon,lat,epsg),x=Math.floor((e-cog.originX)/cog.resX),y=Math.floor((cog.originY-n)/cog.resY);
+  return x>=0&&y>=0&&x<cog.width&&y<cog.height?{x,y,tx:Math.floor(x/tw),ty:Math.floor(y/th)}:null;
+ });
+ const tiles=new Map<string,Decoded>();
+ const unique=new Map(cells.flatMap(p=>p?[[`${p.tx}|${p.ty}`,p] as const]:[]));
+ // Limit source concurrency for a single band, avoiding an unbounded farm-wide read.
+ const jobs=[...unique.entries()];let next=0;
+ await Promise.all(Array.from({length:Math.min(4,jobs.length)},async()=>{
+  while(next<jobs.length){const [key,p]=jobs[next++];tiles.set(key,await getInternalTile(cog,href,0,p.tx,p.ty));}
+ }));
+ return cells.map(p=>{if(!p)return NaN;const tile=tiles.get(`${p.tx}|${p.ty}`)!;const v=Number(tile.data[0][(p.y-tile.y0)*tile.w+p.x-tile.x0]);return v===cog.nodata?NaN:v;});
+}

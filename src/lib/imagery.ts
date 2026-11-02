@@ -1,3 +1,4 @@
+import { utmEpsg } from './field-metrics';
 import type { Job, TileJob, PointJob, StatsJob } from './cog.worker';
 import { createSceneAffinity } from './worker-affinity';
 import { dnOffsetFor, normDiffDn } from './reflectance';
@@ -154,7 +155,7 @@ export function assetsFor(mode: RenderMode): string[] {
 	return [ix.b1, ix.b2];
 }
 
-const epsgOf = (item: StacItem) => item.properties['proj:epsg'] ?? 32654;
+const epsgOf = (item: StacItem) => utmEpsg(item.properties);
 
 // ---- Worker プール ----
 // 取得・デコード・再投影・合成はすべて Worker 内で行い、メインスレッドは描画だけ。

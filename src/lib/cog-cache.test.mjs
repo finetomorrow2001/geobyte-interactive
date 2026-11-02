@@ -156,3 +156,14 @@ test('warm cache retains the original 120-tile working set and refreshes LRU hit
   await cog.getInternalTile(info, 'scene', 0, 1, 0);
   assert.equal(calls, 122, 'least recently used tile is evicted');
 });
+
+test('explicit-location sampling keeps high DN precision, native bands and nodata outside the scene', async () => {
+ let sourceImage;
+ const module=await loadCog(async()=>({getImageCount:async()=>1,getImage:async()=>sourceImage}));
+ const [e,n]=module.lonLatToUtm(-97.78,30.285,32614);
+ let reads=0;
+ sourceImage={getOrigin:()=>[e-5,n+5],getResolution:()=>[10,-10],getGDALNoData:()=>0,getWidth:()=>2,getHeight:()=>2,getSamplesPerPixel:()=>1,getTileWidth:()=>2,getTileHeight:()=>2,
+ readRasters:async()=>{reads++;return [new Uint16Array([6000,2000,1000,0])];}};
+ const r=await module.sampleLocations('Texas-test',32614,[[-97.78,30.285],[-97.78,30.285],[0,0]]);
+ assert.equal(r[0],6000);assert.equal(r[1],6000);assert.ok(Number.isNaN(r[2]));assert.equal(reads,1);
+});
