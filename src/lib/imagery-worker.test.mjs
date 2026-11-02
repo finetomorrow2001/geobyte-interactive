@@ -8,7 +8,12 @@ const compile = source => ts.transpileModule(source, { compilerOptions: {
 const dataUrl = code => 'data:text/javascript;base64,' + Buffer.from(code).toString('base64');
 const affinity = dataUrl(compile(await readFile(new URL('./worker-affinity.ts', import.meta.url), 'utf8')));
 const reflectance = dataUrl(compile(await readFile(new URL('./reflectance.ts', import.meta.url), 'utf8')));
+const scl = dataUrl(compile(await readFile(new URL('./scl.ts', import.meta.url), 'utf8')));
+const metrics = dataUrl(compile(await readFile(new URL('./field-metrics.ts', import.meta.url), 'utf8'))
+  .replace(/from ['"]\.\/reflectance['"]/g, 'from ' + JSON.stringify(reflectance))
+  .replace(/from ['"]\.\/scl['"]/g, 'from ' + JSON.stringify(scl)));
 const source = compile(await readFile(new URL('./imagery.ts', import.meta.url), 'utf8'))
+  .replace(/from ['"]\.\/field-metrics['"]/g, 'from ' + JSON.stringify(metrics))
   .replace(/from ['"]\.\/worker-affinity['"]/g, 'from ' + JSON.stringify(affinity))
   .replace(/from ['"]\.\/reflectance['"]/g, 'from ' + JSON.stringify(reflectance))
   .replace(/new URL\(['"]\.\/cog.worker.ts['"], import.meta.url\)/g, "new URL('file:///test/cog.worker.js')");
@@ -45,6 +50,11 @@ test('NDVI dispatch preserves all operands, coordinates, size and gain while sha
       gain: 1.5, mode: 'index', hrefs: ['https://example.test/a/nir.tif', 'https://example.test/a/red.tif'], cmap: 'rdylgn' });
     assert.equal(posted[1].job.size, 512);
     assert.equal(posted[1].job.z, 12);
+    const texas = { ...item('texas'), properties: { 'proj:code': 'EPSG:32614', 'proj:epsg': 32654 } };
+    await renderTile(texas, { kind: 'index', id: 'ndvi' }, 1, 11, 100, 200);
+    assert.equal(posted.at(-1).job.epsg, 32614);
+    await assert.rejects(renderTile({ ...texas, properties: {} }, { kind: 'index', id: 'ndvi' }, 1, 11, 100, 200), /utm/);
+
     for (const [x, y] of [[100, 200], [102, 200], [100, 202], [102, 202]]) {
       await renderTile(item('a'), { kind: 'composite', id: 'tci' }, 1, 11, x, y, 256);
       assert.equal(posted.at(-1).slot, ((((x >> 1) * 31 + (y >> 1)) >>> 0) % 4));
