@@ -16,16 +16,16 @@ export const imagery = {
 
 		title: '実画像を見る — Satellite Data Lab',
 		h1: '06 実画像を見る',
-		lead1: 'Sentinel-2 の実データを地図上でその場レンダリングします。サーバーはありません——',
-		leadStrong: 'ブラウザが COG に直接 HTTP Range Request を発行',
-		lead2: 'し、表示中のタイルに必要な部分だけを読んで、UTM → Web メルカトルの再投影・バンド合成・NDVI 計算をすべてクライアントで行っています。地図をクリックすると、その地点の各バンド DN と指標値を取得します。',
+		lead1: 'Sentinel-2 の実データを地図上でその場レンダリングします。',
+		leadStrong: 'ブラウザが COG の必要なバイト範囲だけを取得',
+		lead2: 'し、共有キャッシュまたは配信元から読み込みます。UTM → Web メルカトルの再投影・バンド合成・NDVI 計算をすべてクライアントで行っています。地図をクリックすると、その地点の各バンド DN と指標値を取得します。',
 
 		// ---- 使い方 ----
 		howtoTitle: '使い方',
 		howtoToggle: '（クリックで開閉）',
 		howto1: '<strong>場所を選ぶ</strong> — 場所検索に山・川・地域・市町村名・住所・郵便番号・座標を入力し、候補を選択。地図が移動して衛星画像を検索します。座標の順序は選択できます。地名が見つからないときは地域・国を添えるか座標を入力してください。',
 		howto2: '<strong>シーンを選ぶ</strong> — サムネイルをクリックすると <strong>A</strong>（表示レイヤー）に。雲の少ない日付を選ぶのがコツです（☁ は シーン全体の雲量 (cloud cover)）。',
-		howto3: '<strong>表示モードを切り替える</strong> — 「トゥルーカラー」で地形を掴んでから「フォールスカラー」「NDVI」に切り替え、同じ場所の見え方の違いを比べてください。初回はタイル取得に数秒かかります（COG を直接読んでいるため）。2 回目以降はキャッシュで即時です。',
+		howto3: '<strong>表示モードを切り替える</strong> — 「トゥルーカラー」で地形を掴んでから「フォールスカラー」「NDVI」に切り替え、同じ場所の見え方の違いを比べてください。取得には数十秒以上かかる場合があります。タイルの更新状態を確認してください。キャッシュ済みデータは再利用しますが、速さは通信状況や表示範囲によって変わります。',
 		howto4: '<strong>3D で見る</strong> — 地図右上の「3D」で標高データを重ねて傾けます。右ドラッグ（または Ctrl+ドラッグ）で回転・傾き、コンパスをクリックすると北が上に戻ります。コンパスには <span style="color: #f1fa8c">☀ 撮影時の太陽方位 (sun azimuth)</span>と<span style="color: var(--green)">▲ 衛星の進行方向</span>も出ます。雲の影は ☀ の反対側に落ちます。',
 		howto5: '<strong>クリックで値を見る</strong> — 地図上の任意の点をクリック → 右下に 7 バンドの DN と 6 指標の値。森・水・建物・雲・雲影をクリックして NDVI がどう変わるか確かめてください。',
 		howto6: '<strong>2 時期を比べる</strong> — サムネイル右上の「B」で比較レイヤーを設定 → 地図上の橙の境界線にある「A ◀ ▶ B」のつまみを左右にドラッグ。左が A、右が B。値パネルには B − A の差分も出ます。',
@@ -288,7 +288,7 @@ export const imagery = {
 		// ---- ここで起きていること ----
 		noteTitle: 'ここで起きていること：',
 		noteBody:
-			'① ブラウザが Earth Search（STAC）でシーンを検索 → ② 選んだ Item の assets から COG の URL を取得 → ③ <code>geotiff.js</code> が COG のヘッダ（IFD）を読み、表示ズームに合うオーバービュー (overview) を選ぶ → ④ 地図タイルごとに、必要な UTM 範囲の内部タイルだけを Range Request で取得 → ⑤ 各画素を経緯度 → UTM に投影して最近傍サンプリング、合成／指標計算して Canvas に描く。サーバーもダウンロードも無し。05 で見た COG のタイル構造が、そのままブラウザ上の地図の速さに繋がっています。開発者ツールの Network タブで <code>sentinel-cogs.s3</code> へのリクエストを見ると、<code>Range: bytes=…</code> ヘッダと <code>206 Partial Content</code> が確認できます。',
+			'① ブラウザが Earth Search（STAC）でシーンを検索 → ② 選んだ Item の assets から COG の URL を取得 → ③ <code>geotiff.js</code> が COG のヘッダ（IFD）を読み、表示ズームに合うオーバービュー (overview) を選ぶ → ④ 地図タイルごとに、必要な UTM 範囲の内部タイルだけを Range Request で取得 → ⑤ 各画素を経緯度 → UTM に投影して最近傍サンプリング、合成／指標計算して Canvas に描く。計算はブラウザで行い、元データのバイト範囲は共有キャッシュから再利用します。05 で見た COG のタイル構造が、そのままブラウザ上の地図の速さに繋がっています。開発者ツールの Network タブでは <code>/api/cog/v1/</code> のバイト範囲別リクエストを確認できます。取得に失敗した場合は、配信元への <code>Range</code> リクエストで再試行します。',
 
 		// ---- コンパス ----
 		compassBearing: (deg: string) => `地図の向き ${deg}（クリックで北を上に）`,
@@ -313,16 +313,16 @@ export const imagery = {
 
 		title: 'Real Imagery — Satellite Data Lab',
 		h1: '06 Real Imagery',
-		lead1: 'Real Sentinel-2 data rendered on the map, on the fly. There is no server — ',
-		leadStrong: 'the browser issues HTTP range requests straight to the COGs',
-		lead2: ', reads only the parts needed for the visible tiles, and does the UTM → Web Mercator reprojection, band compositing and NDVI computation entirely on the client. Click the map to read the band DNs and index values at that point.',
+		lead1: 'Real Sentinel-2 data rendered on the map, on the fly. ',
+		leadStrong: 'the browser requests only the necessary COG byte ranges',
+		lead2: ', using a shared cache or the source origin. UTM → Web Mercator reprojection, band compositing and NDVI computation run entirely on the client. Click the map to read the band DNs and index values at that point.',
 
 		// ---- How to ----
 		howtoTitle: 'How to use',
 		howtoToggle: ' (click to expand/collapse)',
 		howto1: '<strong>Choose a place</strong> — Search for a mountain, river, area, city, town, address, postal code or coordinates, then choose a result. The map moves there and searches for imagery. Select the coordinate order explicitly. If a name is not found, add a region or country, or enter coordinates.',
 		howto2: '<strong>Pick a scene</strong> — click a thumbnail to make it <strong>A</strong> (the displayed layer). Choose a date with little cloud (☁ is the scene-wide cloud cover).',
-		howto3: '<strong>Switch render mode</strong> — get your bearings in “True color”, then switch to “False color” and “NDVI” and compare how the same place looks. The first load takes a few seconds (the COG is read directly); later loads are instant from cache.',
+		howto3: '<strong>Switch render mode</strong> — get your bearings in “True color”, then switch to “False color” and “NDVI” and compare how the same place looks. Retrieval can take tens of seconds or longer. Watch the tile update status. Cached data is reused, but speed depends on the connection and visible extent.',
 		howto4: '<strong>View in 3D</strong> — “3D” at the top right of the map overlays elevation data and tilts the view. Right-drag (or Ctrl+drag) to rotate and tilt; click the compass to return north to the top. The compass also shows <span style="color: #f1fa8c">☀ sun azimuth at acquisition</span> and <span style="color: var(--green)">▲ satellite heading</span>. Cloud shadows fall on the side opposite ☀.',
 		howto5: '<strong>Click for values</strong> — click anywhere on the map → the bottom-right shows DNs for 7 bands and 6 index values. Click forest, water, buildings, cloud and cloud shadow and see how NDVI changes.',
 		howto6: '<strong>Compare two dates</strong> — set a comparison layer with “B” at the top right of a thumbnail → drag the “A ◀ ▶ B” handle on the orange divider left or right. A on the left, B on the right. The value panel also shows the B − A difference.',
@@ -585,7 +585,7 @@ export const imagery = {
 		// ---- What is happening here ----
 		noteTitle: 'What is happening here:',
 		noteBody:
-			'① The browser searches for scenes on Earth Search (STAC) → ② takes the COG URLs from the selected Item’s assets → ③ <code>geotiff.js</code> reads the COG header (IFDs) and picks the overview matching the display zoom → ④ for each map tile, fetches only the internal tiles covering the needed UTM extent with range requests → ⑤ projects each pixel lon/lat → UTM, samples nearest-neighbour, composites or computes the index and draws to a Canvas. No server, no download. The COG tile structure you saw in 05 translates directly into map speed in the browser. In the DevTools Network tab, requests to <code>sentinel-cogs.s3</code> show the <code>Range: bytes=…</code> header and <code>206 Partial Content</code>.',
+			'① The browser searches for scenes on Earth Search (STAC) → ② takes the COG URLs from the selected Item’s assets → ③ <code>geotiff.js</code> reads the COG header (IFDs) and picks the overview matching the display zoom → ④ for each map tile, fetches only the internal tiles covering the needed UTM extent with range requests → ⑤ projects each pixel lon/lat → UTM, samples nearest-neighbour, composites or computes the index and draws to a Canvas. Computation stays in the browser; exact source byte ranges can be reused through a shared cache. The COG tile structure you saw in 05 translates directly into map speed in the browser. The DevTools Network tab shows range-specific requests to <code>/api/cog/v1/</code>. Failed cache requests retry using a direct-origin <code>Range</code> request.',
 
 		// ---- Compass ----
 		compassBearing: (deg: string) => `Map bearing ${deg} (click to reset north)`,
