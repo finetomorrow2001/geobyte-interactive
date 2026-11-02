@@ -2,10 +2,12 @@
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
+	import { browser } from '$app/environment';
 	import { modules } from '$lib/modules';
 	import { i18n, setLang, L, LANGS } from '$lib/i18n/lang.svelte';
 
 	let { children } = $props();
+	$effect(() => { if (browser) document.documentElement.lang = i18n.lang; });
 </script>
 
 <svelte:head>
@@ -41,7 +43,7 @@
 <style>
 	.shell {
 		display: grid;
-		grid-template-columns: 240px 1fr;
+		grid-template-columns: 240px minmax(0, 1fr);
 		min-height: 100vh;
 	}
 	aside {
@@ -123,13 +125,14 @@
 		font-size: 0.75rem;
 	}
 	main {
+		min-width: 0;
 		padding: 2rem 2.5rem 4rem;
 		max-width: 1100px;
 		width: 100%;
 	}
 	@media (max-width: 800px) {
 		.shell {
-			grid-template-columns: 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 		aside {
 			position: static;

@@ -11,8 +11,10 @@ const KEY = 'sdl-lang';
 
 function initial(): Lang {
 	if (!browser) return 'ja';
-	const saved = localStorage.getItem(KEY);
-	if (saved === 'ja' || saved === 'en') return saved;
+	try {
+		const saved = localStorage.getItem(KEY);
+		if (saved === 'ja' || saved === 'en') return saved;
+	} catch { /* Storage may be disabled; use the browser language. */ }
 	return navigator.language.startsWith('ja') ? 'ja' : 'en';
 }
 
@@ -21,7 +23,7 @@ export const i18n = $state<{ lang: Lang }>({ lang: initial() });
 export function setLang(l: Lang) {
 	i18n.lang = l;
 	if (browser) {
-		localStorage.setItem(KEY, l);
+		try { localStorage.setItem(KEY, l); } catch { /* Keep this session's choice. */ }
 		document.documentElement.lang = l;
 	}
 }
