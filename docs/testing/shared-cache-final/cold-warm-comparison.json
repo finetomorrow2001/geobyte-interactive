@@ -1,0 +1,9 @@
+{
+  "coldMs": 19202.70000000298,
+  "warmMs": 10899.400000002235,
+  "coldIndexTileKeys": 60,
+  "warmIndexTileKeys": 60,
+  "commonIndexTileKeys": 60,
+  "differentTileHashes": 0,
+  "note": "One observed pair; fresh workers and HTTP cache:no-store. No universal speed guarantee. All common native output RGBA hashes compared."
+}
