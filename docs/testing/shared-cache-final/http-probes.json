@@ -1,0 +1,259 @@
+{
+ "generatedAt": "2026-11-02T12:43:42+0900",
+ "deployment": "https://geobyte-interactive-gztc6lf7m-massans-projects-b2d0b952.vercel.app",
+ "method": "vercel curl (existing CLI auth, no Cache-Control/Pragma request headers), 3 sequential requests per never-before-used range; S3 direct Range for reference hash",
+ "results": [
+  {
+   "region": "yubari",
+   "scene": "S2C_54TWN_20251023_0_L2A",
+   "band": "B04",
+   "range": "2114223-3162798",
+   "s3Sha256": "6e15e66ebc34334143c5d53f1e0b15df0f9decedc658b25fa9d0d6c07e267638",
+   "attempts": [
+    {
+     "n": 1,
+     "http": 200,
+     "xVercelCache": "MISS",
+     "age": "0",
+     "xCogRange": "bytes 2114223-3162798/195563673",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.801,
+     "ttfbS": 0.469
+    },
+    {
+     "n": 2,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "3",
+     "xCogRange": "bytes 2114223-3162798/195563673",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.177,
+     "ttfbS": 0.103
+    },
+    {
+     "n": 3,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "7",
+     "xCogRange": "bytes 2114223-3162798/195563673",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.209,
+     "ttfbS": 0.118
+    }
+   ]
+  },
+  {
+   "region": "yubari",
+   "scene": "S2C_54TWN_20251023_0_L2A",
+   "band": "B08",
+   "range": "2114354-3162929",
+   "s3Sha256": "4cde31e626004fa7cd6f22a5bf9d44ca4a5f49e75f0ae5bdcde342abdeffefef",
+   "attempts": [
+    {
+     "n": 1,
+     "http": 200,
+     "xVercelCache": "MISS",
+     "age": "0",
+     "xCogRange": "bytes 2114354-3162929/199130671",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 1.181,
+     "ttfbS": 0.484
+    },
+    {
+     "n": 2,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "5",
+     "xCogRange": "bytes 2114354-3162929/199130671",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.404,
+     "ttfbS": 0.108
+    },
+    {
+     "n": 3,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "9",
+     "xCogRange": "bytes 2114354-3162929/199130671",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.188,
+     "ttfbS": 0.092
+    }
+   ]
+  },
+  {
+   "region": "yubari",
+   "scene": "S2C_54TWN_20251023_0_L2A",
+   "band": "TCI",
+   "range": "2114485-3163060",
+   "s3Sha256": "c19b89b5ca24ef115c57bb57a0939f20f92b85bf613a35368d4d61f303231068",
+   "attempts": [
+    {
+     "n": 1,
+     "http": 200,
+     "xVercelCache": "MISS",
+     "age": "0",
+     "xCogRange": "bytes 2114485-3163060/176230202",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 1.108,
+     "ttfbS": 0.456
+    },
+    {
+     "n": 2,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "4",
+     "xCogRange": "bytes 2114485-3163060/176230202",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.216,
+     "ttfbS": 0.108
+    },
+    {
+     "n": 3,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "8",
+     "xCogRange": "bytes 2114485-3163060/176230202",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.219,
+     "ttfbS": 0.117
+    }
+   ]
+  },
+  {
+   "region": "uonuma",
+   "scene": "S2C_54SUG_20251023_0_L2A",
+   "band": "B04",
+   "range": "2114616-3163191",
+   "s3Sha256": "a7b387011f2738755bff3097907a26180ce481f471848d9dda55061fc9f8caa7",
+   "attempts": [
+    {
+     "n": 1,
+     "http": 200,
+     "xVercelCache": "MISS",
+     "age": "0",
+     "xCogRange": "bytes 2114616-3163191/222385829",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 1.294,
+     "ttfbS": 0.504
+    },
+    {
+     "n": 2,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "4",
+     "xCogRange": "bytes 2114616-3163191/222385829",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.189,
+     "ttfbS": 0.103
+    },
+    {
+     "n": 3,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "8",
+     "xCogRange": "bytes 2114616-3163191/222385829",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.192,
+     "ttfbS": 0.106
+    }
+   ]
+  },
+  {
+   "region": "uonuma",
+   "scene": "S2C_54SUG_20251023_0_L2A",
+   "band": "B08",
+   "range": "2114747-3163322",
+   "s3Sha256": "3f8c3973cd72632e759c3a7a9401e9157a16af39676568f100f4ac661cfd8dce",
+   "attempts": [
+    {
+     "n": 1,
+     "http": 200,
+     "xVercelCache": "MISS",
+     "age": "0",
+     "xCogRange": "bytes 2114747-3163322/255712498",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 1.11,
+     "ttfbS": 0.554
+    },
+    {
+     "n": 2,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "6",
+     "xCogRange": "bytes 2114747-3163322/255712498",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.223,
+     "ttfbS": 0.099
+    },
+    {
+     "n": 3,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "15",
+     "xCogRange": "bytes 2114747-3163322/255712498",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.329,
+     "ttfbS": 0.239
+    }
+   ]
+  },
+  {
+   "region": "uonuma",
+   "scene": "S2C_54SUG_20251023_0_L2A",
+   "band": "TCI",
+   "range": "2114878-3163453",
+   "s3Sha256": "06578032ca31ff37e3da85382baa49795b06fa2646e30abfd5f741f521a02e38",
+   "attempts": [
+    {
+     "n": 1,
+     "http": 200,
+     "xVercelCache": "MISS",
+     "age": "0",
+     "xCogRange": "bytes 2114878-3163453/317048984",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 1.205,
+     "ttfbS": 0.533
+    },
+    {
+     "n": 2,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "3",
+     "xCogRange": "bytes 2114878-3163453/317048984",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.222,
+     "ttfbS": 0.111
+    },
+    {
+     "n": 3,
+     "http": 200,
+     "xVercelCache": "HIT",
+     "age": "5",
+     "xCogRange": "bytes 2114878-3163453/317048984",
+     "bytes": 1048576,
+     "shaMatchesS3": true,
+     "totalS": 0.192,
+     "ttfbS": 0.089
+    }
+   ]
+  }
+ ]
+}

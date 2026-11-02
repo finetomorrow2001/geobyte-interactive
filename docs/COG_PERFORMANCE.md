@@ -217,7 +217,7 @@ Local raw reports and screenshots are retained under
 failure incorrectly; use `threeSuccessfulColdTrialsMedian` and the explicit
 attempt table above instead. No null-derived speedup is accepted.
 
-## Shared source-range cache (implementation; deployment validation pending)
+## Shared source-range cache
 
 The `/api/cog/v1/{start}-{end}/{public-COG-path}` endpoint stores exact source
 bytes in the Vercel CDN for seven days, with a one-day browser cache lifetime.
@@ -270,5 +270,68 @@ that run cold. Do not purge unrelated caches to force a cold result.
 34 tests, zero Svelte diagnostics, local production build and Vercel preview
 build passed. Antigravity computer-use calls repeatedly timed out, so browser
 cold/warm timings and shared-cache image regressions remain unverified.
-PR #13 remains a draft; no merge or production deployment is authorized by
-these HTTP-only results as a substitute for the requested acceptance tests.
+At that point PR #13 remained a draft: those HTTP-only results did not replace
+the requested browser acceptance. The final acceptance below supersedes that
+pending status.
+
+
+## Final shared-cache acceptance — 2026-11-02
+
+The former browser blocker is resolved by Codex's existing authenticated in-app
+browser; no protection/access settings were changed. Claude independently reviewed
+the source and verified six new 1 MiB source ranges through the deployed endpoint:
+all MISS→HIT→HIT, exact SHA-256 equality with S3. Median first request 1.15 s,
+subsequent HIT .21 s; these are small HTTP probes, not map timings.
+
+Codex then measured preview 561f385 with temporary test-only worker interception
+(`docs/testing/shared-cache-final/browser-observer.js`). Every phase creates a
+new document and new workers. Fetch `cache:no-store` skips the browser HTTP cache;
+CDP checks found no request Cache-Control/Pragma and `fromDiskCache:false` for
+the separate browser MISS/HIT probe. Shared CDN caching remains enabled. The
+same authenticated browser profile is used; these are not new browser profiles.
+The observer queues early messages before importing the unchanged production
+worker and records metadata/output hashes. Instrumentation is not shipped.
+
+Identical South Yubari A/B scenes 2026-10-23 / 10-18, centre
+142.0325,42.94500994955, zoom11.8030980141, bearing0, pitch60,
+1280×937 viewport, DPR1, both map canvases958×558:
+
+| One observed NDVI mode-switch pair | Empty shared cache | Saved shared cache, new workers |
+|---|---:|---:|
+| Both maps settled (plus 600 ms stability check excluded) | 19,203 ms | 10,899 ms |
+| Red/NIR requests | 92 MISS | 92 HIT |
+| Unique output tile-job keys | 60 | 60 |
+| Exact corresponding RGBA SHA-256 differences | 0 | 0 |
+
+This single pair is approximately 43% shorter. It is an observed mode-switch
+journey after selecting A/B, not an app-navigation benchmark or universal speed
+guarantee. Other TCI requests can overlap the transition. Cache misses/eviction,
+source/network variance, decoding and scene/viewport choices still affect latency.
+Transfer-size totals were not exposed in these worker fetch records and are not
+invented. Raw cold/warm files and exact-input-key comparison are retained locally
+under `docs/testing/shared-cache-final/`.
+
+Regional browser regression: South/North Yubari and Uonuma, TCI and NDVI, all six
+conditions completed A/B imagery and matching centre/zoom/bearing/pitch. Fixed
+compass turns and returns preserve sync. Correctly hit-tested left and right
+visible imagery receive Ctrl-drag; the interactive A canvas also handles the
+right side because the B overlay intentionally has pointer-events disabled.
+Fish/Uonuma split30/70 checks recorded actual ctrlKey=true inputs and matching
+cameras. An earlier hit on a UI overlay did not reach the canvas: it was excluded
+and retargeted, never reported as an application failure. Rapid mode switches
+settled at the final selected NDVI. Empty-footprint tiles remain explicitly
+counted, not mistaken for a loading failure.
+
+Exploratory mixed-DPR runs and an initial observer that failed to queue early
+worker messages are excluded from timing/quality acceptance. A monitor started
+as a compass return overlapped the following mode switch; that row is diagnostic
+only. The accepted cold/warm pair has matching scene/tile keys and completed
+NDVI states. Previous six-region source-locality ROI acceptance remains above;
+this shared-cache check adds source-byte and exact worker-output equality, not a
+claim that all screenshot UI pixels are identical.
+
+PR14 was merged first (4348d56). It was merged cleanly into PR13; an isolated
+transpiled-module test loader was updated for the new projection dependency and
+now also asserts Texas proj:code precedence and missing-projection rejection.
+Combined validation:42/42 tests, zero Svelte errors/warnings, production build.
+Final deployed combined-preview and production smoke are recorded with the PR.
