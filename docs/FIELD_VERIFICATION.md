@@ -3,13 +3,13 @@
 2026-11-02. Base: main 13fb332. Implementation: /field, native full-resolution
 COG samples, per-scene projection/reflectance validation, same-location deltas.
 
-Automated: `npm test` 32/32; `npm run check` 0 errors / 0 warnings;
+Automated: `npm test` 33/33; `npm run check` 0 errors / 0 warnings;
 `npm run build` successful. CSV regression preserves negative NDWI/BSI values
 as numbers and neutralizes formula-like untrusted strings separately.
 
 ## Independent Claude Code Desktop browser QA
 
-Four review rounds; Claude did not edit application code. Technical results:
+Seven review rounds; Claude did not edit application code. Technical results:
 
 - Brackenridge, three dates in Sep–Oct 2025: 2112/2112 valid locations per date;
   NDVI medians .642 / .620 / .567. Pair 09-02 → 10-12: median -.042, mean -.046.
@@ -46,15 +46,43 @@ Uncached source analysis took about 34–41 seconds per scene in the Node run;
 independent browser QA observed about 20 seconds per scene. These are observed
 runs, not a benchmark or promised loading time.
 
+## Additional acceptance, 2026-11-02
+
+- Four real zone-15 scenes across 15RTQ/15RTP completed in Claude's browser,
+  2256/2256 valid samples each. Same-date medians agree across overlapping tiles.
+- Four Austin 2021 records exercised original baseline 03.01 (offset not applied)
+  and reprocessed 05.00 (offset already applied). Both correctly use offset zero.
+  Same-acquisition NDVI medians differ by .006 / .011; SCL masks can differ.
+- `FIELD_REMAINING_SMOKE.json` retains the separate native-COG runs for 15N
+  and 2021. `FIELD_INDEPENDENT_CHECK.json` compares proj4 2.22.0 coordinates,
+  direct GeoTIFF windows and independent arithmetic against app indices: four
+  public-scene sample checks, maximum index error zero. It shares the GeoTIFF
+  decoder; it is not an independent decoder validation. Reproduce with
+  `node scripts/verify-field-independent.mjs /path/to/proj4-2.22.0.cjs`.
+- Identical acquisition timestamps are marked in the scene list, and a JA/EN
+  warning explains reprocessing/tile differences must not be called time change.
+  Results rows expose the full scene ID rather than only the timestamp.
+- Fixed the min-content grid sizing that expanded the whole page to 795 px.
+  With real analysis results: innerWidth/clientWidth/scrollWidth all equal
+  375/375/375, 390/390/390, 768/768/768, and 1280/1280/1280. Wide tables scroll
+  inside their wrappers. Chart/map/selection, geometry drawing and exports work.
+  Shared-layout checks of home, spectral and imagery also have no page overflow.
+- Cancel is a neutral status message, clears partial work and re-enables analysis.
+  Final-build 375 px analysis and cancellation were independently rechecked.
+- Saved JA/EN reloads showed no wrong-language frame; document language matches.
+  /field renders client-side after selecting language. localStorage get/set
+  failures are guarded; storage-disabled startup remains source-reviewed only.
+- JSON exports retain explicitly labeled boundary/notes and scene provenance;
+  CSV negatives remain numeric. No private test notes are committed here.
+
 ## Remaining limits
 
-No independent real-device mobile sign-off. A responsive chart keeps text sizes
-and reduces date labels at narrow widths, but this needs device review. Live 15N
-and pre-2022 offset browser comparisons remain untested; pure unit coverage exists.
-The inherited initial language hydration flash remains possible. Duplicate STAC
-items are not grouped; IDs and acquisition times remain visible.
+Mobile measurements are browser iframe emulation, not a phone, iOS Simulator,
+mobile Safari, touch-input or safe-area sign-off. No independent storage-disabled
+browser startup test. Duplicate records remain separate, explicitly labeled.
 
 No owner-approved Austin farm boundary, field damage labels, drone acquisition,
-causal damage validation, QHC production integration, or production deployment was
-performed. Study presets are approximate public-location examples, not property
-boundaries, damage sites, or access permission.
+causal damage validation or QHC production integration was performed. Study
+presets are approximate public-location examples, not property boundaries,
+damage sites or access permission. Production smoke is recorded separately
+when the reviewed PR is merged and deployed.

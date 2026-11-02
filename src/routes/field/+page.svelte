@@ -19,18 +19,20 @@
  let site=$state(fieldSites[0].id),from=$state(new Date(Date.now()-365*86400000).toISOString().slice(0,10)),to=$state(todayUtc()),cloud=$state(80),grid=$state(48);
  let scenes=$state<StacItem[]>([]),chosen=$state<string[]>([]),next=$state<SceneRequest|null>(null),searched=$state(false),searching=$state(false);
  let points=$state<FieldPoint[]>([]),results=$state<FieldResult[]>([]),sceneErrors=$state<Record<string,string>>({}),busy=$state(false),progress=$state(''),error=$state('');
- let chartWidth=$state(800);
+ let chartWidth=$state(800),canceled=$state(false);
  let a=$state(''),b=$state(''),metric=$state<FieldIndex>('ndvi'),display=$state('difference'),notes=$state('');
  let drawing=$state(false),first:FieldPoint|null=null,showRaster=$state(false),tile=$state<TileProgress>({pending:0,completed:0,empty:0,failed:0});
  let rejectJob:((e:Error)=>void)|undefined,jobTimer:ReturnType<typeof setTimeout>|undefined;
  let controller:AbortController|undefined,worker:Worker|undefined,version=0,key:string|undefined,disposed=false;
  const resultA=$derived(results.find(r=>r.id===a)),resultB=$derived(results.find(r=>r.id===b));
  const pair=$derived(resultA&&resultB&&a!==b?pairedChange(resultA,resultB,metric):null);
+ const sameTime=$derived(resultA&&resultB&&a!==b&&Date.parse(resultA.datetime)===Date.parse(resultB.datetime));
+ const acquisitionCounts=$derived.by(()=>{const counts=new Map<number,number>();for(const s of scenes){const time=Date.parse(s.properties.datetime);if(Number.isFinite(time))counts.set(time,(counts.get(time)??0)+1);}return counts;});
  const seasonal=$derived(resultA&&resultB&&Math.abs(Date.parse(resultA.datetime)-Date.parse(resultB.datetime))>45*86400000);
  const sourceSite=$derived(fieldSites.find(s=>s.id===site));
  const text=(v:number|null|undefined)=>v===null||v===undefined?'—':v.toFixed(3);
  function cancel(){version++;controller?.abort();clearTimeout(jobTimer);rejectJob?.(Error('Canceled'));rejectJob=undefined;worker?.terminate();worker=undefined;busy=false;searching=false;}
- function clearResults(){cancel();results=[];sceneErrors={};points=[];a='';b='';error='';showRaster=false;}
+ function clearResults(){cancel();canceled=false;results=[];sceneErrors={};points=[];a='';b='';error='';showRaster=false;}
  function resetSearch(){clearResults();scenes=[];chosen=[];next=null;searched=false;}
  function applyBoundary(g?:FieldGeometry){
   try{const parsed=parseField(g?JSON.stringify(g):geoText);fieldGrid(parsed,grid);resetSearch();geometry=parsed;geoText=JSON.stringify(parsed,null,2);redraw();const box=boundsOf(parsed);map?.fitBounds([[box[0],box[1]],[box[2],box[3]]],{padding:35,duration:0});}
@@ -42,7 +44,7 @@
   if(busy)return;
   controller?.abort();controller=new AbortController();const current=++version;
   try{
-   error='';searching=true;
+   error='';canceled=false;searching=true;
    const request=append?next:sceneRequest(boundsOf(geometry),from,to,cloud,true);if(!request)return;
    if(!append){results=[];scenes=[];chosen=[];points=[];a='';b='';showRaster=false;sceneErrors={};}
    const page=await fetchScenePage(request,controller.signal);if(current!==version)return;
@@ -128,13 +130,14 @@
 </section>
 <div class="field-map" bind:this={mapEl} role="region" aria-label={t('map')}></div>
 <p class="muted">{display==='difference'?t('legend'):t(metric)} · {t('method')} · {t('spacing')}: {spacingMeters(geometry,grid).x.toFixed(1)} × {spacingMeters(geometry,grid).y.toFixed(1)} m</p>
+{#if canceled}<p role="status" class="muted">{t('canceled')}</p>{/if}
 {#if error}<p role="alert" class="notice">{t('error')}: {error}</p>{/if}
 <section class="panel"><h2>{t('search')}</h2><p class="muted">{t('clear')}</p>
  <div class="actions"><label>{t('from')}<input type="date" bind:value={from} min="2015-06-27" max={to} onchange={resetSearch} /></label><label>{t('to')}<input type="date" bind:value={to} min={from} max={todayUtc()} onchange={resetSearch} /></label><label>{t('cloud')}<input type="number" bind:value={cloud} min="0" max="100" onchange={resetSearch} /></label><button onclick={()=>search()} disabled={busy||searching}>{searching?t('searching'):t('search')}</button></div>
  {#if searched&&!scenes.length}<p>{t('empty')}</p>{/if}
- {#if scenes.length}<p>{t('choose')} ({chosen.length}/12; {scenes.length})</p><div class="scene-list">{#each scenes as s (s.id)}<label class="scene"><input type="checkbox" checked={chosen.includes(s.id)} onchange={e=>choose(s.id,e.currentTarget.checked)} disabled={busy} /><span>{s.properties.datetime.slice(0,10)} · ☁ {s.properties['eo:cloud_cover']?.toFixed(1)??'—'}%<small>{s.id}</small></span></label>{/each}</div>{/if}
+ {#if scenes.length}<p>{t('choose')} ({chosen.length}/12; {scenes.length})</p><div class="scene-list">{#each scenes as s (s.id)}<label class="scene"><input type="checkbox" checked={chosen.includes(s.id)} onchange={e=>choose(s.id,e.currentTarget.checked)} disabled={busy} /><span>{s.properties.datetime.slice(0,10)} · ☁ {s.properties['eo:cloud_cover']?.toFixed(1)??'—'}%<small>{s.id}{#if (acquisitionCounts.get(Date.parse(s.properties.datetime))??0)>1} · {t('duplicateTime')}{/if}</small></span></label>{/each}</div>{/if}
  {#if next}<p>{t('moreHint')}</p><button class="ghost" onclick={()=>search(true)} disabled={searching||busy}>{t('more')}</button>{/if}
- <div class="actions"><label>{t('grid')}<select bind:value={grid} onchange={clearResults}>{#each [24,48,96] as n}<option value={n}>{n} × {n}</option>{/each}</select></label><button onclick={analyze} disabled={busy||searching||chosen.length<2||chosen.length>12}>{t('analyze')}</button>{#if busy||searching}<button class="ghost" onclick={()=>{cancel();error=t('canceled');}}>{t('stop')}</button>{/if}</div>
+ <div class="actions"><label>{t('grid')}<select bind:value={grid} onchange={clearResults}>{#each [24,48,96] as n}<option value={n}>{n} × {n}</option>{/each}</select></label><button onclick={analyze} disabled={busy||searching||chosen.length<2||chosen.length>12}>{t('analyze')}</button>{#if busy||searching}<button class="ghost" onclick={()=>{cancel();error='';canceled=true;}}>{t('stop')}</button>{/if}</div>
  {#if busy}<p role="status">{t('working')} {progress}</p>{/if}<p class="muted">{t('unknown')}</p>
  {#each Object.entries(sceneErrors) as [id,message]}<p role="alert">{id}: {message}</p>{/each}
 </section>
@@ -144,10 +147,10 @@
   {#each [chartMin,(chartMin+chartMax)/2,chartMax] as v}<line x1="55" y1={chartY(v)} x2={chartWidth-25} y2={chartY(v)} stroke="#526276" stroke-width=".5"/><text x="6" y={chartY(v)+5} fill="currentColor" font-size="12">{v.toFixed(3)}</text>{/each}
   {#each chartRows as row,i}<g><title>{row.result.datetime}: {text(row.stats.median)} · {row.result.valid}/{row.result.total}</title>{#if row.valid&&row.stats.median!==null}{#if row.stats.q1!==null&&row.stats.q3!==null}<line x1={chartX(row.result.datetime)} x2={chartX(row.result.datetime)} y1={chartY(row.stats.q1)} y2={chartY(row.stats.q3)} stroke="#8da8be" stroke-width="3" />{/if}<circle cx={chartX(row.result.datetime)} cy={chartY(row.stats.median)} r="5" fill="#55e7b5" />{:else}<text x={chartX(row.result.datetime)} y="125" fill="currentColor">×</text>{/if}{#if i===0||i===chartRows.length-1||i%Math.max(1,Math.ceil(chartRows.length/Math.max(2,chartWidth/100)))===0}<text transform={`translate(${chartX(row.result.datetime)},245) rotate(-30)`} font-size="11" fill="currentColor">{row.result.datetime.slice(0,10)}</text>{/if}</g>{/each}
  </svg></div>
- <div class="table-scroll"><table><thead><tr><th>{t('date')}</th><th>{t('valid')}</th><th>{t('median')}</th><th>{t('mean')}</th><th>{t('spread')}</th><th>{t('dark')}</th></tr></thead><tbody>{#each results as r}<tr><td title={r.id}>{r.datetime}</td><td>{r.valid}/{r.total} ({(r.valid/r.total*100).toFixed(1)}%)</td><td>{r.valid/r.total>=.5?text(summary(r.values[metric]).median):t('noData')}</td><td>{r.valid/r.total>=.5?text(summary(r.values[metric]).mean):'—'}</td><td>{r.valid/r.total>=.5?`${text(summary(r.values[metric]).q1)} … ${text(summary(r.values[metric]).q3)}`:'—'}</td><td>{r.dark}</td></tr>{/each}</tbody></table></div>
+ <div class="table-scroll"><table><thead><tr><th>{t('date')}</th><th>{t('valid')}</th><th>{t('median')}</th><th>{t('mean')}</th><th>{t('spread')}</th><th>{t('dark')}</th></tr></thead><tbody>{#each results as r}<tr><td title={r.id}>{r.datetime}<small>{r.id}</small></td><td>{r.valid}/{r.total} ({(r.valid/r.total*100).toFixed(1)}%)</td><td>{r.valid/r.total>=.5?text(summary(r.values[metric]).median):t('noData')}</td><td>{r.valid/r.total>=.5?text(summary(r.values[metric]).mean):'—'}</td><td>{r.valid/r.total>=.5?`${text(summary(r.values[metric]).q1)} … ${text(summary(r.values[metric]).q3)}`:'—'}</td><td>{r.dark}</td></tr>{/each}</tbody></table></div>
  </section>
  <section class="panel"><h2>{t('difference')}</h2><div class="actions"><label>{t('baseline')}<select bind:value={a}>{#each results as r}<option value={r.id}>{r.datetime.slice(0,10)} · {r.id}</option>{/each}</select></label><label>{t('comparison')}<select bind:value={b}>{#each results as r}<option value={r.id}>{r.datetime.slice(0,10)} · {r.id}</option>{/each}</select></label><label>{t('display')}<select bind:value={display}><option value="difference">{t('difference')}</option><option value="single">{t('single')}</option></select></label></div>
- <p>{t('pairedRule')}</p>{#if pair}<p>{t('paired')}: {pair.count}/{resultA?.total} ({(pair.share*100).toFixed(1)}%) · {t('median')}: {pair.accepted?text(pair.median):t('noData')} · {t('mean')}: {pair.accepted?text(pair.mean):'—'} · {t('spread')}: {pair.accepted?`${text(pair.q1)} … ${text(pair.q3)}`:'—'}</p>{/if}{#if seasonal}<p class="notice">{t('season')}</p>{/if}
+ <p>{t('pairedRule')}</p>{#if pair}<p>{t('paired')}: {pair.count}/{resultA?.total} ({(pair.share*100).toFixed(1)}%) · {t('median')}: {pair.accepted?text(pair.median):t('noData')} · {t('mean')}: {pair.accepted?text(pair.mean):'—'} · {t('spread')}: {pair.accepted?`${text(pair.q1)} … ${text(pair.q3)}`:'—'}</p>{/if}{#if sameTime}<p class="notice">{t('sameTime')}</p>{/if}{#if seasonal}<p class="notice">{t('season')}</p>{/if}
  <div class="actions"><button class="ghost" onclick={()=>showRaster=!showRaster}>{showRaster?t('rasterOff'):t('raster')}</button><a href={viewer} target="_blank" rel="noreferrer">{t('view')}</a></div>
  {#if showRaster}<p role="status">{tile.failed?t('failed'):tile.pending?t('pending'):tile.completed?t('done'):t('pending')} · {tile.completed} / {tile.pending} · {tile.empty}</p>{/if}
  <label>{t('notes')}<textarea bind:value={notes} rows="3" maxlength="5000" placeholder={t('notesHint')}></textarea></label><div class="actions"><button onclick={()=>save('json')}>{t('json')}</button><button class="ghost" onclick={()=>save('csv')}>{t('csv')}</button></div>
@@ -155,5 +158,5 @@
 {/if}
 <details><summary>{t('sources')}</summary><ul><li><a href="https://fieldstations.utexas.edu/field-stations">UT Austin Field Stations</a></li><li><a href="https://integrativebio.utexas.edu/directory/phuong-dao">Phuong Dao · UT Austin</a></li><li><a href="https://lair.etamu.edu/etd/1093/">Wild-pig damage: UAV and ground-truth research (2023)</a></li><li><a href="https://dataspace.copernicus.eu/data-collections/copernicus-sentinel-missions/sentinel-2">Copernicus Sentinel-2</a></li></ul></details>
 <style>
- .panel{margin:1rem 0}.notice{border-left:4px solid #e59b42;padding:.8rem;background:#e59b4211}.actions{display:flex;flex-wrap:wrap;gap:.7rem;align-items:end;margin:.7rem 0}label{display:flex;flex-direction:column;gap:.3rem;margin:.4rem 0}input,select,textarea{max-width:100%;min-width:0}textarea{width:100%;font-family:monospace}.field-map{height:460px;border:1px solid #354661;border-radius:12px;overflow:hidden}.scene-list{max-height:280px;overflow:auto}.scene{flex-direction:row;align-items:start;gap:.7rem}.scene input{width:auto}.scene small{display:block;color:var(--muted);overflow-wrap:anywhere}svg{display:block;width:100%;min-height:180px}.table-scroll{overflow:auto}th,td{padding:.5rem;text-align:left;white-space:nowrap}h2{font-size:1.2rem} .actions label{max-width:100%}
+ .panel{margin:1rem 0}.notice{border-left:4px solid #e59b42;padding:.8rem;background:#e59b4211}.actions{display:flex;flex-wrap:wrap;gap:.7rem;align-items:end;margin:.7rem 0}label{display:flex;flex-direction:column;gap:.3rem;margin:.4rem 0}input,select,textarea{max-width:100%;min-width:0}textarea{width:100%;font-family:monospace}.field-map{height:460px;border:1px solid #354661;border-radius:12px;overflow:hidden}.scene-list{max-height:280px;overflow:auto}.scene{flex-direction:row;align-items:start;gap:.7rem}.scene input{width:auto}.scene small{display:block;color:var(--muted);overflow-wrap:anywhere}svg{display:block;width:100%;min-height:180px}.table-scroll{overflow:auto;max-width:100%}td small{display:block;color:var(--muted)}th,td{padding:.5rem;text-align:left;white-space:nowrap}h2{font-size:1.2rem} .actions label{max-width:100%}
 </style>

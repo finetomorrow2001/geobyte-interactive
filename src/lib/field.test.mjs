@@ -49,3 +49,13 @@ test('paired changes use the same positions, require 30 valid pairs and never su
  assert.ok(csvCell('  =SUM(1,2)').startsWith('"\''));
  assert.equal(csvCell('ordinary "scene"'),'"ordinary ""scene"""');
 });
+
+test('old baseline, unharmonized offset and harmonized DN give identical physical indices',()=>{
+ const physical=[2000,3000,4000,6000,5000,4];
+ const native=physical.map(v=>[v]), shifted=physical.map((v,i)=>[i<5?v+1000:v]);
+ const old=metrics.fieldValues({'s2:processing_baseline':'03.00'},native);
+ const modern=metrics.fieldValues({'s2:processing_baseline':'04.00','earthsearch:boa_offset_applied':false},shifted);
+ const harmonized=metrics.fieldValues({'s2:processing_baseline':'05.00','earthsearch:boa_offset_applied':true},native);
+ assert.deepEqual(old,modern);assert.deepEqual(old,harmonized);assert.equal(old.values.ndvi[0],.2);
+ assert.equal(old.values.ndmi[0],1/11);assert.equal(old.values.ndwi[0],-1/3);assert.equal(old.values.bsi[0],1/17);
+});
