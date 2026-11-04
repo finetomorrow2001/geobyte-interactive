@@ -43,3 +43,12 @@ OSM map labels and returned source/diagnostic text are not machine-translated.
 Narrow-width tests are desktop browser emulation, not a physical phone/touch test.
 Only public Sentinel-2 imagery/presets are used; no private location data or slides
 are edited. Scientific screening limits and existing privacy rules remain.
+
+Source-review limitation: the existing imagery tile dispatcher does not forward
+optional SCL/offset operands to the raster worker. This translation change does
+not alter that computation. The old raster legend asserted SCL transparency;
+it now conservatively directs the user to true colour and independently computed
+point/area SCL quality. Point/time-series and area quality computations retain
+their existing SCL handling. Do not treat a coloured NDVI raster as a validated
+cloud mask or animal/damage evidence. A raster-science change needs a separate,
+explicitly validated task.
