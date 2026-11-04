@@ -166,7 +166,7 @@
 	let tilesLoading = $state(false);
 	let requests = $state(0);
 
-	const currentAssets = $derived(itemA ? assetsFor(mode).map((a) => ({ a, href: itemA!.assets[a].href })) : []);
+	const currentAssets = $derived(itemA ? [...assetsFor(mode), ...(mode.kind === 'index' && itemA.assets.scl ? ['scl'] : [])].map((a) => ({ a, href: itemA!.assets[a].href })) : []);
 	const modeDesc = $derived(
 		mode.kind === 'composite' ? composites.find((c) => c.id === mode.id)?.desc : indices.find((i) => i.id === mode.id)?.desc
 	);
