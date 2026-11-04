@@ -4,18 +4,17 @@
  * - 辞書はページ単位（src/lib/i18n/<page>.ts）。日本語側は専門用語に英語を併記する方針
  */
 import { browser } from '$app/environment';
+import { resolveLanguage, type Lang } from './locale';
+export type { Lang } from './locale';
 
-export type Lang = 'ja' | 'en';
 export const LANGS: Lang[] = ['ja', 'en'];
 const KEY = 'sdl-lang';
 
 function initial(): Lang {
 	if (!browser) return 'ja';
-	try {
-		const saved = localStorage.getItem(KEY);
-		if (saved === 'ja' || saved === 'en') return saved;
-	} catch { /* Storage may be disabled; use the browser language. */ }
-	return navigator.language.startsWith('ja') ? 'ja' : 'en';
+	let saved: string | null = null;
+	try { saved = localStorage.getItem(KEY); } catch { /* Storage may be disabled. */ }
+	return resolveLanguage(new URL(location.href).searchParams.get('lang'), saved, navigator.language);
 }
 
 export const i18n = $state<{ lang: Lang }>({ lang: initial() });

@@ -1268,6 +1268,8 @@
 	</p>
 </details>
 
+<p class="muted">{t('timeDistinction')}</p>
+
 <LocationSearch ready={mapReady} bind:selected={located} onselect={selectLocation} />
 
 <div class="btn-row">
@@ -1354,6 +1356,7 @@
 	{#if itemB && tilesLoadingB}
 		<div class="loading loadingB" style:left="calc({swipe}% + 12px)">{t('mapLoadingB')}</div>
 	{/if}
+	<div class="map-captions">
 	<div class="tile-status" role="status" aria-live="polite">
 		<div>{t('mapRotateHelp')}</div>
 		{#if basemap === 'esri'}<div>{basemapDate}</div>{/if}
@@ -1373,12 +1376,6 @@
 			{:else if slot === 'a'}<div>{t('tileStatusUnselected')}</div>{/if}
 		{/each}
 	</div>
-	{#if tileErr.a || tileErr.b}
-		<div class="tile-error" role="alert">{#if tileErr.a}<div>{t('mapErrorA', tileErr.a)}{tileMsg.a ? ` — ${tileMsg.a.slice(0, 120)}` : ''}</div>{/if}{#if tileErr.b}<div>{t('mapErrorB', tileErr.b)}{tileMsg.b ? ` — ${tileMsg.b.slice(0, 120)}` : ''}</div>{/if}</div>
-	{/if}
-	{#if tilesLoading || loading}
-		<div class="loading">{loading ? t('mapLoadingStac') : t('mapLoadingTiles')}</div>
-	{/if}
 	{#if itemA}
 		{#if switched}
 			<div class="switched">{t('mapTimeSwitched', switched.date, switched.sat)}</div>
@@ -1392,6 +1389,14 @@
 			{#if (!offsetKnown(itemA)) || (itemB && !offsetKnown(itemB))}<div class="warn">{t('offsetUnknown')}（{[!offsetKnown(itemA) ? 'A' : '', itemB && !offsetKnown(itemB) ? 'B' : ''].filter(Boolean).join('・')}）</div>{/if}
 		</div>
 	{/if}
+	</div>
+	{#if tileErr.a || tileErr.b}
+		<div class="tile-error" role="alert">{#if tileErr.a}<div>{t('mapErrorA', tileErr.a)}{tileMsg.a ? ` — ${tileMsg.a.slice(0, 120)}` : ''}</div>{/if}{#if tileErr.b}<div>{t('mapErrorB', tileErr.b)}{tileMsg.b ? ` — ${tileMsg.b.slice(0, 120)}` : ''}</div>{/if}</div>
+	{/if}
+	{#if tilesLoading || loading}
+		<div class="loading">{loading ? t('mapLoadingStac') : t('mapLoadingTiles')}</div>
+	{/if}
+
 	{#if itemB}
 		<!-- 比較の境界線。地図全幅のスライダーだと右上の UI に重なるので、境界線 + 中央のつまみだけにする -->
 		<div class="divider" style:left="{swipe}%">
@@ -1440,6 +1445,7 @@
 <div class="grid cols-2">
 	<div class="panel">
 		<h3>{t('modeTitle')}</h3>
+		<p class="muted">{t('indexInterpretation')}</p>
 		<div class="btn-row">
 			{#each composites as c (c.id)}
 				<button class="ghost" class:active={mode.kind === 'composite' && mode.id === c.id} onclick={() => (mode = { kind: 'composite', id: c.id })}>{L(c.name)}</button>
@@ -2128,7 +2134,8 @@
 		height: 0 !important;
 		border-top: 1.5px dashed var(--accent-2);
 	}
-	.tile-status { position: absolute; bottom: 12px; left: 12px; z-index: 5; max-width: calc(100% - 24px); background: rgba(11, 16, 32, 0.9); padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.75rem; pointer-events: none; }
+	.map-captions { position: absolute; bottom: 28px; left: 10px; z-index: 5; display: flex; flex-direction: column; gap: 6px; width: min(720px, calc(100% - 24px)); pointer-events: none; }
+	.tile-status { background: rgba(11, 16, 32, 0.9); padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.75rem; pointer-events: none; }
 	.loading {
 		position: absolute;
 		top: 10px;
@@ -2164,10 +2171,6 @@
 		color: #ffb4b4;
 	}
 	.legend {
-		position: absolute;
-		bottom: 28px;
-		left: 10px;
-		z-index: 5;
 		background: rgba(11, 16, 32, 0.85);
 		border: 1px solid var(--border);
 		border-radius: 6px;
