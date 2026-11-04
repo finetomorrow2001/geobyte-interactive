@@ -9,6 +9,7 @@
 	import Compass from '$lib/Compass.svelte';
 	import LocationSearch from '$lib/LocationSearch.svelte';
 	import type { LocationResult } from '$lib/location';
+	import { wildlifeSites } from '$lib/field-sites';
 	import { ARCHIVE_START, todayUtc, sceneRequest, fetchScenePage, type SceneRequest } from '$lib/archive';
 	import { searchAnnual, manualSelect, reselectByRegion, inFootprint, type AnnualScene } from '$lib/annual';
 	import { sclReason, invalidShare, SCL_INVALID_CLASSES, type SclSummary, type SclReason } from '$lib/scl';
@@ -137,8 +138,10 @@
 	// Public locality overview boxes only; no application boundaries or private map data.
 	const studyAreas = [
 		{ id: 'south', name: { ja: '夕張・南側', en: 'Yubari – South' }, detail: { ja: '紅葉山・沼ノ沢周辺', en: 'Around Momijiyama & Numanosawa' }, bbox: [141.975, 42.91, 142.09, 42.98] as [number,number,number,number] },
-		{ id: 'north', name: { ja: '夕張・北側', en: 'Yubari – North' }, detail: { ja: '南清水沢・鹿の谷周辺', en: 'Around Minami-Shimizusawa & Shikanotani' }, bbox: [141.915, 42.975, 142.055, 43.065] as [number,number,number,number] }
+		{ id: 'north', name: { ja: '夕張・北側', en: 'Yubari – North' }, detail: { ja: '南清水沢・鹿の谷周辺', en: 'Around Minami-Shimizusawa & Shikanotani' }, bbox: [141.915, 42.975, 142.055, 43.065] as [number,number,number,number] },
+		...wildlifeSites.map(s => ({...s, detail: s.detail!}))
 	];
+	const wildlifeTarget = $derived(wildlifeSites.find(s => s.id === selectedArea));
 	// 年カードの地域内 SCL 集計（シーン ID → 集計）。分母・除外クラスは scl.ts を参照
 	let regionStat = $state<Record<string, SclSummary>>({});
 	let regionErr = $state<Record<string, string>>({});
@@ -198,7 +201,7 @@
 
 	$effect(() => {
 		const selected = mode.kind === 'index' ? mode.id : null;
-		untrack(() => { if (selected && selected !== seriesIndex) { seriesIndex = selected; if (point && series.length) buildSeries(); } });
+		untrack(() => { if (selected && selected !== seriesIndex) { seriesIndex = selected; refreshSeries(); } });
 	});
 
 	// ---- 軌道 ----
@@ -988,9 +991,11 @@
 	}
 
 	async function buildSeries() {
+		// Invalidate in-flight results even when the new source has no scenes.
+		const version = ++seriesVersion;
 		const src = seriesSource === 'yearly' ? yearly.flatMap((y) => (y.item ? [y.item] : [])) : items;
-		if (!point || !src.length) return;
-		const version = ++seriesVersion, location = {...point};
+		if (!point || !src.length) { series = []; seriesLoading = false; return; }
+		const location = {...point};
 		seriesLoading = true; series = [];
 		const ix = indices.find((i) => i.id === seriesIndex)!;
 		const list = [...src].sort((a, b) => a.properties.datetime.localeCompare(b.properties.datetime)).slice(-20);
@@ -1006,10 +1011,9 @@
 		finally { if (version === seriesVersion) seriesLoading = false; }
 	}
 
-	$effect(() => {
-		const selected = mode.kind === 'index' ? mode.id : null;
-		untrack(() => { if (selected && selected !== seriesIndex) { seriesIndex = selected; if (point && series.length) buildSeries(); } });
-	});
+	function refreshSeries() {
+		if (seriesLoading || series.length) void buildSeries();
+	}
 
 	// ---- 軌道 ----
 	function ensureSatMarkers(map: MLMap) {
@@ -1276,11 +1280,15 @@
 	{#each places as p (p.id)}
 		<button class="ghost" onclick={() => goto(p)} title={L(p.hint)}>{L(p.name)}</button>
 	{/each}
-	<!-- 夕張の南北: 地域を選択して概略範囲へ移動（年次比較はこの範囲を対象にする） -->
+	<!-- Public study regions: annual comparison uses the selected vicinity box. -->
 	{#each studyAreas as area (area.id)}
 		<button class="ghost" class:active={selectedArea === area.id} aria-pressed={selectedArea === area.id} onclick={() => chooseArea(area.id)} title={L(area.detail)}>{L(area.name)}</button>
 	{/each}
 </div>
+{#if wildlifeTarget}
+	<p class="notice">{L(wildlifeTarget.detail!)}</p>
+	<ul>{#each wildlifeTarget.sources ?? [] as source}<li><a href={source.url} target="_blank" rel="noreferrer">{source.label}</a></li>{/each}</ul>
+{/if}
 
 <svelte:document onfullscreenchange={onFullscreenChange} />
 
@@ -1707,16 +1715,17 @@
 		{#if point}<p>{point.lat.toFixed(5)}, {point.lon.toFixed(5)} · {L(indices.find(ix => ix.id === seriesIndex)!.name)}</p>{/if}
 		<p class="muted">{t('seriesRefNote')}</p>
 		<div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap">
-			<select bind:value={seriesIndex} onchange={() => series.length && buildSeries()}>
+			<select bind:value={seriesIndex} onchange={refreshSeries}>
 				{#each indices as ix (ix.id)}<option value={ix.id}>{L(ix.name)}</option>{/each}
 			</select>
-			<select bind:value={seriesSource} onchange={() => series.length && buildSeries()} aria-label={t('seriesSourceAria')}>
+			<select bind:value={seriesSource} onchange={refreshSeries} aria-label={t('seriesSourceAria')}>
 				<option value="items">{t('seriesSrcItems')}</option>
 				<option value="yearly">{t('seriesSrcYearly')}</option>
 			</select>
 			<button onclick={buildSeries} disabled={!point || seriesLoading || !(seriesSource === 'yearly' ? yearly.some((y) => y.item) : items.length)}>{seriesLoading ? t('seriesBusy') : t('seriesBtn', Math.min(20, seriesSource === 'yearly' ? yearly.filter((y) => y.item).length : items.length))}</button>
 		</div>
 		{#if series.length}
+			{#if series.some(s => s.v !== null && Math.abs(s.v) > 1)}<p role="status" class="warn">{t('seriesRangeWarning')}</p>{/if}
 			<svg viewBox="0 0 800 180" width="100%" style="margin-top: 0.6rem" aria-label={t('seriesAria')}>
 				{#each yTicks as t (t)}
 					<line x1={CX0} y1={sy(t)} x2={CX1} y2={sy(t)} stroke="#1c2950" />
