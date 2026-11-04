@@ -3,11 +3,23 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
+	import { untrack } from 'svelte';
+	import { replaceState } from '$app/navigation';
+	import { languageUrl, localeParam, type Lang } from '$lib/i18n/locale';
 	import { modules } from '$lib/modules';
 	import { i18n, setLang, L, LANGS } from '$lib/i18n/lang.svelte';
 
 	let { children } = $props();
 	$effect(() => { if (browser) document.documentElement.lang = i18n.lang; });
+	$effect(() => {
+		const explicit = localeParam(page.url.searchParams.get('lang'));
+		// Shared demo links intentionally persist the requested language for later visits.
+		if (browser && explicit) untrack(() => setLang(explicit));
+	});
+	function chooseLanguage(lang: Lang) {
+		setLang(lang);
+		replaceState(languageUrl(location.href, lang), page.state);
+	}
 </script>
 
 <svelte:head>
@@ -16,23 +28,23 @@
 
 <div class="shell">
 	<aside>
-		<a class="brand" href="/">
+		<a class="brand" href={languageUrl('/', i18n.lang)}>
 			<span class="logo">🛰</span>
 			<span>Satellite Data Lab</span>
 		</a>
+		<div class="lang" role="group" aria-label="言語 / Language">
+			{#each LANGS as l (l)}
+				<button class:active={i18n.lang === l} onclick={() => chooseLanguage(l)} aria-pressed={i18n.lang === l} lang={l}>{l === 'ja' ? '日本語' : 'English'}</button>
+			{/each}
+		</div>
 		<nav>
 			{#each modules as m, i (m.path)}
-				<a href={m.path} class:active={page.url.pathname === m.path}>
+				<a href={languageUrl(m.path, i18n.lang)} class:active={page.url.pathname === m.path}>
 					<span class="idx">{String(i + 1).padStart(2, '0')}</span>
 					<span>{L(m.title)}</span>
 				</a>
 			{/each}
 		</nav>
-		<div class="lang" role="group" aria-label="Language">
-			{#each LANGS as l (l)}
-				<button class:active={i18n.lang === l} onclick={() => setLang(l)} lang={l}>{l === 'ja' ? '日本語' : 'English'}</button>
-			{/each}
-		</div>
 		<p class="foot muted">{i18n.lang === 'ja' ? 'エンジニア向け 衛星データ利用 入門' : 'Satellite data for engineers'}</p>
 	</aside>
 	<main>
@@ -62,7 +74,7 @@
 		gap: 0.5rem;
 		font-weight: 700;
 		color: var(--text);
-		margin-bottom: 1.5rem;
+		margin-bottom: 0.7rem;
 		font-size: 1.05rem;
 	}
 	.logo {
@@ -97,7 +109,7 @@
 		padding-top: 0.15rem;
 	}
 	.lang {
-		margin-top: auto;
+		margin: 0 0 1rem;
 		display: inline-flex;
 		border: 1px solid var(--border);
 		border-radius: 8px;
@@ -109,9 +121,14 @@
 		color: var(--muted);
 		border: none;
 		border-radius: 0;
-		padding: 0.25rem 0.7rem;
+		padding: 0.55rem 0.8rem;
+		min-height: 44px;
 		font-size: 0.78rem;
 		font-weight: 600;
+	}
+	.lang button:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -3px;
 	}
 	.lang button + button {
 		border-left: 1px solid var(--border);
@@ -148,7 +165,7 @@
 			display: none;
 		}
 		.lang {
-			margin-top: 0.5rem;
+			margin: 0 0 0.7rem;
 		}
 		main {
 			padding: 1.2rem 1rem 3rem;

@@ -78,6 +78,8 @@ export const imagery = {
 
 		// ---- 表示モード ----
 		modeTitle: '表示モード',
+		indexInterpretation: 'NDWI = (B3 − B8) / (B3 + B8)、NDMI = (B8A − B11) / (B8A + B11)。NDVIは植生の緑の程度であり、可食な餌や動物の検出ではありません。NDMIは植生の水分に関連する指標で、土壌水分や隠れ場所の証明ではありません。',
+		timeDistinction: '画像の日付は撮影日（UTC）。軌道の時計は衛星位置の表示時刻（JST＝UTC+9）で、画像の撮影時刻とは別です。',
 		modeGain: 'ゲイン (gain)（rescale 上限を 1/gain に）',
 		modeOpacity: '不透明度 (opacity)',
 		modeCogLabel: '読んでいる COG',
@@ -155,7 +157,7 @@ export const imagery = {
 		mapLoadingB: 'B 読込中…',
 		mapErrorA: (n: number) => `A のタイル取得に失敗 (${n})`,
 		mapErrorB: (n: number) => `B のタイル取得に失敗 (${n})`,
-		seriesRefNote: '地点指標は参考表示です。雲・影・雪の除外およびシーン別の反射率補正を適用した統計ではなく、経年変化の確定判断には使用できません。',
+		seriesRefNote: '地点指標は1地点の参考値で、地域統計ではありません。利用可能なSCLで雲・影・雪などを欠測にし、シーン別の補正情報を使用します。SCLや補正情報が不明な場合もあるため品質表示を確認し、経年変化や原因を断定しないでください。',
 		pointSclRow: 'SCL 分類 (20 m・最近傍)',
 		sclClass_2: '暗域', sclClass_4: '植生', sclClass_5: '裸地', sclClass_6: '水', sclClass_7: '未分類',
 		mask_nodata: '欠測（SCL=0／取得不可）', mask_saturated: '飽和・欠陥', mask_shadow: '雲影', mask_cloud: '雲', mask_cirrus: '巻雲', mask_snow: '雪',
@@ -375,6 +377,8 @@ export const imagery = {
 
 		// ---- Render mode ----
 		modeTitle: 'Render mode',
+		indexInterpretation: 'NDWI = (B3 − B8) / (B3 + B8); NDMI = (B8A − B11) / (B8A + B11). NDVI describes vegetation greenness, not edible forage or animal detection. NDMI relates to vegetation moisture; it does not establish soil moisture or hiding cover.',
+		timeDistinction: 'Image dates are acquisition dates (UTC). The orbit clock shows the satellite-position display time (JST = UTC+9), separately from image acquisition time.',
 		modeGain: 'Gain (rescale max becomes 1/gain)',
 		modeOpacity: 'Opacity',
 		modeCogLabel: 'COGs being read',
@@ -452,7 +456,7 @@ export const imagery = {
 		mapLoadingB: 'Loading B…',
 		mapErrorA: (n: number) => `A: ${n} tile(s) failed to load`,
 		mapErrorB: (n: number) => `B: ${n} tile(s) failed to load`,
-		seriesRefNote: 'Point indices are for reference only. They are not statistics with cloud/shadow/snow masking or per-scene reflectance correction, so they cannot settle year-to-year change.',
+		seriesRefNote: 'Point indices describe one sample location, not area statistics. Available SCL masks cloud, shadow, snow and other invalid classes; scene metadata determines reflectance correction. SCL or correction metadata may be unavailable: inspect quality flags and do not infer year-to-year change or its cause from this chart alone.',
 		pointSclRow: 'SCL class (20 m, nearest)',
 		sclClass_2: 'dark area', sclClass_4: 'vegetation', sclClass_5: 'bare', sclClass_6: 'water', sclClass_7: 'unclassified',
 		mask_nodata: 'no data (SCL=0 / unavailable)', mask_saturated: 'saturated / defective', mask_shadow: 'cloud shadow', mask_cloud: 'cloud', mask_cirrus: 'cirrus', mask_snow: 'snow',
