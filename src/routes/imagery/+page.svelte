@@ -998,7 +998,7 @@
 			const results = await Promise.all(list.map(async (item) => {
 				const r = await readPoint(item, location.lon, location.lat, [ix.b1, ix.b2]);
 				const reason = maskOf(r);
-				// 無効画素は 0 にせず欠測（null）。点・時系列・指数画像で同じ SCL 判定を使う
+				// 無効画素は 0 にせず欠測（null）。点・時系列に SCL 判定を適用する。指数画像の dispatcher は SCL を渡していない
 				return { item, v: reason ? null : indexFromDn(item, r.vals[ix.b1], r.vals[ix.b2]), reason };
 			}));
 			if (version === seriesVersion) series = results;
