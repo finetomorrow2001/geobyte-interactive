@@ -34,7 +34,8 @@ test('NDVI dispatch preserves all operands, coordinates, size and gain while sha
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { hardwareConcurrency: 5 } });
   try {
     const { renderTile } = await import(dataUrl(source));
-    const item = id => ({ id, properties: { 'proj:epsg': 32654 }, assets: {
+    const item = id => ({ id, properties: { 'proj:epsg': 32654, 's2:processing_baseline': '05.00', 'earthsearch:boa_offset_applied': false }, assets: {
+      scl: { href: `https://example.test/${id}/scl.tif` },
       nir: { href: `https://example.test/${id}/nir.tif` },
       red: { href: `https://example.test/${id}/red.tif` },
       visual: { href: `https://example.test/${id}/visual.tif` }
@@ -47,7 +48,7 @@ test('NDVI dispatch preserves all operands, coordinates, size and gain while sha
     assert.notEqual(posted[0].slot, posted[2].slot);
     const { id, ...job } = posted[0].job;
     assert.deepEqual(job, { kind: 'tile', epsg: 32654, z: 11, x: 100, y: 200, size: 256,
-      gain: 1.5, mode: 'index', hrefs: ['https://example.test/a/nir.tif', 'https://example.test/a/red.tif'], cmap: 'rdylgn' });
+      gain: 1.5, mode: 'index', hrefs: ['https://example.test/a/nir.tif', 'https://example.test/a/red.tif'], cmap: 'rdylgn', sclHref: 'https://example.test/a/scl.tif', dnOffset: 1000 });
     assert.equal(posted[1].job.size, 512);
     assert.equal(posted[1].job.z, 12);
     const texas = { ...item('texas'), properties: { 'proj:code': 'EPSG:32614', 'proj:epsg': 32654 } };
@@ -59,6 +60,8 @@ test('NDVI dispatch preserves all operands, coordinates, size and gain while sha
       await renderTile(item('a'), { kind: 'composite', id: 'tci' }, 1, 11, x, y, 256);
       assert.equal(posted.at(-1).slot, ((((x >> 1) * 31 + (y >> 1)) >>> 0) % 4));
       assert.equal(posted.at(-1).job.mode, 'composite');
+      assert.equal(posted.at(-1).job.sclHref, undefined);
+      assert.equal(posted.at(-1).job.dnOffset, undefined);
       assert.deepEqual(posted.at(-1).job.hrefs, ['https://example.test/a/visual.tif']);
     }
   } finally {

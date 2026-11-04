@@ -44,11 +44,13 @@ Narrow-width tests are desktop browser emulation, not a physical phone/touch tes
 Only public Sentinel-2 imagery/presets are used; no private location data or slides
 are edited. Scientific screening limits and existing privacy rules remain.
 
-Source-review limitation: the existing imagery tile dispatcher does not forward
-optional SCL/offset operands to the raster worker. This translation change does
-not alter that computation. The old raster legend asserted SCL transparency;
-it now conservatively directs the user to true colour and independently computed
-point/area SCL quality. Point/time-series and area quality computations retain
-their existing SCL handling. Do not treat a coloured NDVI raster as a validated
-cloud mask or animal/damage evidence. A raster-science change needs a separate,
-explicitly validated task.
+Raster-quality follow-up: index tile jobs now forward the scene SCL asset and
+`dnOffsetFor` correction to the existing worker. Available SCL excludes classes
+0, 1, 3, 8, 9, 10 and 11 with nearest-neighbour sampling. Missing SCL is explicitly
+warned for each A/B scene; an available asset that fails to load fails the tile
+rather than silently returning unmasked imagery. Correction metadata that is
+unknown retains the existing warning and offset-zero fallback. Composite images
+remain unmasked and unchanged. SCL is a classification product, not ground truth;
+continue to inspect true colour and independent point/area quality. NDSI also
+uses this screening policy, so snow-classified pixels are transparent; use true
+colour/SWIR and SCL quality for snow inspection. No animal or damage inference.

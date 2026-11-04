@@ -998,7 +998,7 @@
 			const results = await Promise.all(list.map(async (item) => {
 				const r = await readPoint(item, location.lon, location.lat, [ix.b1, ix.b2]);
 				const reason = maskOf(r);
-				// 無効画素は 0 にせず欠測（null）。点・時系列に SCL 判定を適用する。指数画像の dispatcher は SCL を渡していない
+				// 無効画素は 0 にせず欠測（null）。点・時系列・指数画像は同じ SCL 除外クラスを使う
 				return { item, v: reason ? null : indexFromDn(item, r.vals[ix.b1], r.vals[ix.b2]), reason };
 			}));
 			if (version === seriesVersion) series = results;
@@ -1385,7 +1385,10 @@
 			{#if itemB}
 				<div><strong>B</strong> {fmtDate(itemB.properties.datetime)} <span class="muted">{satLabel(itemB)} · {t('mapLegendCloud', cloud(itemB)?.toFixed(0))}</span> <span class="muted">{t('mapLegendRight')}</span>{#if cover.b < 0.98} <span class="warn">{cover.b < 0.02 ? t('coverNone') : t('coverPartial', (cover.b * 100).toFixed(0))}</span>{/if}</div>
 			{/if}
-			{#if mode.kind === 'index'}<div class="muted">{t('maskNote')}</div>{/if}
+			{#if mode.kind === 'index'}
+				<div class="muted">{t('maskNote')}</div>
+				{#if !itemA.assets.scl || (itemB && !itemB.assets.scl)}<div class="warn">{t('rasterSclMissing', [!itemA.assets.scl ? 'A' : '', itemB && !itemB.assets.scl ? 'B' : ''].filter(Boolean).join(' / '))}</div>{/if}
+			{/if}
 			{#if (!offsetKnown(itemA)) || (itemB && !offsetKnown(itemB))}<div class="warn">{t('offsetUnknown')}（{[!offsetKnown(itemA) ? 'A' : '', itemB && !offsetKnown(itemB) ? 'B' : ''].filter(Boolean).join('・')}）</div>{/if}
 		</div>
 	{/if}
