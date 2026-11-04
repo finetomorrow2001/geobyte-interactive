@@ -29,9 +29,9 @@ export type TileJob = {
 	gain: number;
 	/** index のみ */
 	cmap?: string;
-	/** index のみ。SCL の COG。指定すると雲・雲影・巻雲・雪・欠測の画素を透過（欠測扱い）にする */
+	/** index のみ。SCL の COG。指定すると雲・雲影・巻雲・雪・欠測の画素を透過（欠測扱い）にする。現行の raster dispatcher は未指定 */
 	sclHref?: string;
-	/** index のみ。DN から引くオフセット（reflectance.ts の dnOffsetFor）。補正済みなら 0 */
+	/** index のみ。DN から引くオフセット（reflectance.ts の dnOffsetFor）。補正済みなら 0。現行の raster dispatcher は未指定 */
 	dnOffset?: number;
 };
 export type PointJob = { id: number; kind: 'point'; epsg: number; lon: number; lat: number; hrefs: string[] };
@@ -44,7 +44,7 @@ async function renderTile(job: TileJob): Promise<Uint8ClampedArray<ArrayBuffer>>
 	const rgba = new Uint8ClampedArray(new ArrayBuffer(size * size * 4));
 	const [tiles, scl] = await Promise.all([
 		Promise.all(job.hrefs.map((h) => sampleTile(h, epsg, z, x, y, size))),
-		// 指数画像だけ SCL を読む（真色・合成は雲を見せるためマスクしない）。SCL の 20 m は最近傍で対応付ける
+		// 指数画像かつ sclHref 指定時だけ SCL を読む（現行 dispatcher は未指定）。SCL の 20 m は最近傍で対応付ける
 		job.mode === 'index' && job.sclHref ? sampleTile(job.sclHref, epsg, z, x, y, size) : Promise.resolve(null)
 	]);
 
