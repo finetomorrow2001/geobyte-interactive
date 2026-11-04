@@ -166,7 +166,7 @@
 	let tilesLoading = $state(false);
 	let requests = $state(0);
 
-	const currentAssets = $derived(itemA ? assetsFor(mode).map((a) => ({ a, href: itemA!.assets[a].href })) : []);
+	const currentAssets = $derived(itemA ? [...assetsFor(mode), ...(mode.kind === 'index' && itemA.assets.scl ? ['scl'] : [])].map((a) => ({ a, href: itemA!.assets[a].href })) : []);
 	const modeDesc = $derived(
 		mode.kind === 'composite' ? composites.find((c) => c.id === mode.id)?.desc : indices.find((i) => i.id === mode.id)?.desc
 	);
@@ -998,7 +998,7 @@
 			const results = await Promise.all(list.map(async (item) => {
 				const r = await readPoint(item, location.lon, location.lat, [ix.b1, ix.b2]);
 				const reason = maskOf(r);
-				// 無効画素は 0 にせず欠測（null）。点・時系列に SCL 判定を適用する。指数画像の dispatcher は SCL を渡していない
+				// 無効画素は 0 にせず欠測（null）。点・時系列・指数画像は同じ SCL 除外クラスを使う
 				return { item, v: reason ? null : indexFromDn(item, r.vals[ix.b1], r.vals[ix.b2]), reason };
 			}));
 			if (version === seriesVersion) series = results;
@@ -1358,7 +1358,7 @@
 	{/if}
 	<div class="map-captions">
 	<div class="tile-status" role="status" aria-live="polite">
-		<div>{t('mapRotateHelp')}</div>
+		<div class="map-rotate-help">{t('mapRotateHelp')}</div>
 		{#if basemap === 'esri'}<div>{basemapDate}</div>{/if}
 		{#each ['a', 'b'] as key}
 			{@const slot = key as 'a' | 'b'}
@@ -1366,12 +1366,13 @@
 			{#if item}
 				{@const progress = tileProgress[slot]}
 				<div><strong>{slot.toUpperCase()} · {fmtDate(item.properties.datetime)} · {mode.id}</strong><br />
-					{#if progress.failed || tileErr[slot]}{t('tileStatusFailed')}
+					<span class="status-wide">{#if progress.failed || tileErr[slot]}{t('tileStatusFailed')}
 					{:else if imageOutside[slot]}{t('tileStatusOutside')}
 					{:else if imageZoom[slot] < 8}{t('tileStatusZoom')}
 					{:else if progress.pending || !imageLoaded[slot]}{t('tileStatusBusy', progress.pending)}
 					{:else}{t('tileStatusDone')}{/if}
-					 · {t('tileStatusCounts', progress.completed, progress.empty)}
+					 · {t('tileStatusCounts', progress.completed, progress.empty)}</span>
+					<span class="status-compact">{#if progress.failed || tileErr[slot]}{t('tileFailedShort')}{:else if imageOutside[slot]}{t('tileOutsideShort')}{:else if imageZoom[slot] < 8}{t('tileZoomShort')}{:else if progress.pending || !imageLoaded[slot]}{t('tileBusyShort',progress.pending)}{:else}{t('tileDoneShort')}{/if} · {t('tileCountsShort',progress.completed,progress.empty)}</span>
 				</div>
 			{:else if slot === 'a'}<div>{t('tileStatusUnselected')}</div>{/if}
 		{/each}
@@ -1383,9 +1384,12 @@
 		<div class="legend" class:flash={!!switched}>
 			<div><strong>A</strong> {fmtDate(itemA.properties.datetime)} <span class="muted">{satLabel(itemA)} · {t('mapLegendCloud', cloud(itemA)?.toFixed(0))}</span>{#if cover.a < 0.98} <span class="warn">{cover.a < 0.02 ? t('coverNone') : t('coverPartial', (cover.a * 100).toFixed(0))}</span>{/if}</div>
 			{#if itemB}
-				<div><strong>B</strong> {fmtDate(itemB.properties.datetime)} <span class="muted">{satLabel(itemB)} · {t('mapLegendCloud', cloud(itemB)?.toFixed(0))}</span> <span class="muted">{t('mapLegendRight')}</span>{#if cover.b < 0.98} <span class="warn">{cover.b < 0.02 ? t('coverNone') : t('coverPartial', (cover.b * 100).toFixed(0))}</span>{/if}</div>
+				<div><strong>B</strong> {fmtDate(itemB.properties.datetime)} <span class="muted">{satLabel(itemB)} · {t('mapLegendCloud', cloud(itemB)?.toFixed(0))}</span> <span class="muted comparison-side-label">{t('mapLegendRight')}</span>{#if cover.b < 0.98} <span class="warn">{cover.b < 0.02 ? t('coverNone') : t('coverPartial', (cover.b * 100).toFixed(0))}</span>{/if}</div>
 			{/if}
-			{#if mode.kind === 'index'}<div class="muted">{t('maskNote')}</div>{/if}
+			{#if mode.kind === 'index'}
+				<div class="muted raster-mask-note">{t('maskNote')}</div>
+				{#if !itemA.assets.scl || (itemB && !itemB.assets.scl)}<div class="warn">{t('rasterSclMissing', [!itemA.assets.scl ? 'A' : '', itemB && !itemB.assets.scl ? 'B' : ''].filter(Boolean).join(' / '))}</div>{/if}
+			{/if}
 			{#if (!offsetKnown(itemA)) || (itemB && !offsetKnown(itemB))}<div class="warn">{t('offsetUnknown')}（{[!offsetKnown(itemA) ? 'A' : '', itemB && !offsetKnown(itemB) ? 'B' : ''].filter(Boolean).join('・')}）</div>{/if}
 		</div>
 	{/if}
@@ -1457,6 +1461,7 @@
 			{/each}
 		</div>
 		<p class="muted" style="font-size: 0.85rem">{modeDescText}</p>
+		{#if mode.kind === 'index'}<p class="muted" style="font-size: 0.78rem">{t('rasterQualityNote')}</p>{/if}
 		{#if mode.kind === 'composite' && composites.find((c) => c.id === mode.id)?.rescaleMax}
 			<div class="control">
 				<label for="gain">{t('modeGain')}</label>
@@ -2135,6 +2140,12 @@
 		border-top: 1.5px dashed var(--accent-2);
 	}
 	.map-captions { position: absolute; bottom: 28px; left: 10px; z-index: 5; display: flex; flex-direction: column; gap: 6px; width: min(720px, calc(100% - 24px)); pointer-events: none; }
+	.status-compact { display: none; }
+	@media (max-width: 640px) {
+		.status-wide, .map-rotate-help, .raster-mask-note, .comparison-side-label { display: none; }
+		.status-compact { display: inline; }
+	}
+
 	.tile-status { background: rgba(11, 16, 32, 0.9); padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.75rem; pointer-events: none; }
 	.loading {
 		position: absolute;

@@ -89,7 +89,7 @@ export const indices: IndexDef[] = [
 		b1: 'nir',
 		b2: 'red',
 		colormap: 'rdylgn',
-		desc: { ja: '緑 = 密な植生、黄 = 裸地・都市・雲、赤 = 水・雲影。', en: 'Green = dense vegetation, yellow = bare soil / urban / cloud, red = water / cloud shadow.' }
+		desc: { ja: '緑 = 密な植生、黄 = 裸地・都市、赤 = 水など。SCLがあれば雲・雲影等は透過。', en: 'Green = dense vegetation, yellow = bare soil / urban, red = water and other low values. Available SCL masks cloud and shadow.' }
 	},
 	{
 		id: 'ndwi',
@@ -121,7 +121,7 @@ export const indices: IndexDef[] = [
 		b1: 'green',
 		b2: 'swir16',
 		colormap: 'blues',
-		desc: { ja: '0.4 以上で雪。雲は SWIR でも明るいので分離できる。', en: 'Above 0.4 is snow. Clouds stay bright in SWIR, so they separate.' }
+		desc: { ja: '0.4 以上が雪の目安。ただしSCLの雪クラスも透過するため、積雪の確認にはTCI・SWIRとSCL品質を併用。', en: 'Above 0.4 is a snow indicator; SCL snow classes are also masked here. Inspect snow with TCI/SWIR and SCL quality.' }
 	},
 	{
 		id: 'ndbi',
@@ -219,7 +219,7 @@ export async function renderTile(item: StacItem, mode: RenderMode, gain: number,
 		job = { kind: 'tile', epsg, z, x, y, size, gain, mode: 'composite', hrefs: c.assets.map((a) => item.assets[a].href), rescaleMax: c.rescaleMax };
 	} else {
 		const ix = indices.find((v) => v.id === mode.id)!;
-		job = { kind: 'tile', epsg, z, x, y, size, gain, mode: 'index', hrefs: [item.assets[ix.b1].href, item.assets[ix.b2].href], cmap: ix.colormap };
+		job = { kind: 'tile', epsg, z, x, y, size, gain, mode: 'index', hrefs: [item.assets[ix.b1].href, item.assets[ix.b2].href], cmap: ix.colormap, sclHref: item.assets.scl?.href, dnOffset: dnOffsetFor(item.properties).offset };
 	}
 	return submit<Uint8ClampedArray<ArrayBuffer>>(job, slot);
 }
