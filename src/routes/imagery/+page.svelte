@@ -1460,6 +1460,7 @@
 			{/each}
 		</div>
 		<p class="muted" style="font-size: 0.85rem">{modeDescText}</p>
+		{#if mode.kind === 'index'}<p class="muted" style="font-size: 0.78rem">{t('rasterQualityNote')}</p>{/if}
 		{#if mode.kind === 'composite' && composites.find((c) => c.id === mode.id)?.rescaleMax}
 			<div class="control">
 				<label for="gain">{t('modeGain')}</label>

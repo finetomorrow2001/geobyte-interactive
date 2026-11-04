@@ -1,40 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import vm from 'node:vm';
-import ts from 'typescript';
+import {harness} from './raster-test-harness.mjs';
 
-// Run the real dispatcher AND worker message handler; only COG IO is replaced.
-// This catches missing payload fields, silent unmasked fallbacks and double correction.
-function harness(samples) {
- const reads=[], jobs=[];
- function load(name, extras={}, cache=new Map()) {
-  if(cache.has(name)) return cache.get(name);
-  const exports={}; cache.set(name,exports);
-  const source=readFileSync(new URL(`./${name}.ts`,import.meta.url),'utf8').replaceAll('import.meta.url',JSON.stringify(import.meta.url));
-  const code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
-  vm.runInNewContext(code,{exports,URL,setTimeout,clearTimeout,console,...extras,require(id){
-   if(id==='./cog') return {sampleTile:async(href,...coords)=>{
-    reads.push({href,coords});
-    if(samples[href] instanceof Error)throw samples[href];
-    if(!samples[href])throw Error(`missing fixture ${href}`);
-    return {bands:samples[href].map(x=>Float32Array.from(x))};
-   },colormap:(_name,v)=>[v*255,(1-v)*255,128]};
-   return load(id.slice(2),extras,cache);
-  }});
-  return exports;
- }
- class Worker {
-  constructor(){
-   const self={fetch:async()=>{},postMessage:(data)=>this.onmessage({data})};
-   load('cog.worker',{self});this.self=self;
-  }
-  postMessage(job){jobs.push(job);void this.self.onmessage({data:job});}
- }
- const api=load('imagery',{Worker,navigator:{hardwareConcurrency:4}});
- const item={id:'fixture',properties:{'proj:epsg':32654,'s2:processing_baseline':'05.00','earthsearch:boa_offset_applied':false},assets:Object.fromEntries(['nir','red','green','nir08','swir16','visual','scl'].map(k=>[k,{href:k}]))};
- return {api,item,reads,jobs};
-}
 const render=(h,mode)=>h.api.renderTile(h.item,mode,1,12,3663,1500,4);
 const band=v=>Array(16).fill(v);
 test('raster dispatcher applies scene-specific offset once for NDVI/NDWI/NDMI',async()=>{
