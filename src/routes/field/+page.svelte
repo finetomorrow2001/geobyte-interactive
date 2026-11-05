@@ -123,7 +123,10 @@
 <section class="panel"><h2>{t('aoi')}</h2>
  <label>{t('name')}<input bind:value={studyName} maxlength="120" /></label>
  <label>{t('presets')}<select bind:value={site} onchange={()=>preset(site)}><option value="">GeoJSON</option>{#each fieldSites as s}<option value={s.id}>{L(s.name)}</option>{/each}</select></label>
- <p class="muted">{t('approx')}</p>{#if sourceSite}<a href={sourceSite.source} target="_blank" rel="noreferrer">{t('sources')}</a>{/if}
+ <p class="muted">{t('approx')}</p>{#if sourceSite}
+ {#if sourceSite.detail}<p class="notice">{L(sourceSite.detail)}</p>{/if}
+ {#if sourceSite.sources}<ul>{#each sourceSite.sources as source}<li><a href={source.url} target="_blank" rel="noreferrer">{source.label}</a></li>{/each}</ul>
+ {:else}<a href={sourceSite.source} target="_blank" rel="noreferrer">{t('sources')}</a>{/if}{/if}
  <label for="field-geojson">{t('geo')}</label><textarea id="field-geojson" bind:value={geoText} rows="5" spellcheck="false"></textarea>
  <div class="actions"><button onclick={()=>{site='';applyBoundary();}}>{t('apply')}</button><label>{t('file')}<input type="file" accept=".geojson,.json,application/geo+json,application/json" onchange={fileChange} /></label><button class="ghost" onclick={()=>{drawing=!drawing;first=null;}}>{drawing?t('drawing'):t('draw')}</button></div>
  <p class="muted">{t('privacy')}</p>

@@ -59,3 +59,22 @@ test('old baseline, unharmonized offset and harmonized DN give identical physica
  assert.deepEqual(old,modern);assert.deepEqual(old,harmonized);assert.equal(old.values.ndvi[0],.2);
  assert.equal(old.values.ndmi[0],1/11);assert.equal(old.values.ndwi[0],-1/3);assert.equal(old.values.bsi[0],1/17);
 });
+
+
+test('Austin wildlife vicinity presets have valid shared geometry and explicit historical evidence',async()=>{
+ const {fieldSites,wildlifeSites}=(await load('./field-sites.ts')).module;
+ assert.equal(new Set(fieldSites.map(s=>s.id)).size,fieldSites.length);
+ assert.deepEqual(wildlifeSites.map(s=>s.id),['farmshare','griffith']);
+ for(const site of wildlifeSites){
+  assert.equal(fieldSites.find(s=>s.id===site.id),site);
+  const geometry=geo.parseField(JSON.stringify(geo.rectangle(site.bbox)));
+  assert.ok(geo.fieldGrid(geometry,48).length>=30);
+  for(const lang of ['ja','en']) assert.ok(site.name[lang]&&site.detail[lang]);
+  assert.ok(site.sources.length>=2);
+  assert.ok(site.sources.every(s=>new URL(s.url).protocol==='https:'));
+ }
+ assert.ok(geo.inField([-97.5119701,30.1974546],geo.rectangle(wildlifeSites[0].bbox)));
+ assert.ok(geo.inField([-97.255320,30.215390],geo.rectangle(wildlifeSites[1].bbox)));
+ assert.match(wildlifeSites[0].detail.en,/2022/);
+ assert.match(wildlifeSites[1].detail.en,/2011.*predate Sentinel-2/);
+});
