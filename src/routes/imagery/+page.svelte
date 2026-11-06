@@ -1217,6 +1217,22 @@
 		const first = Date.parse(series[0].item.properties.datetime), last = Date.parse(series[n - 1].item.properties.datetime);
 		return last === first ? (CX0 + CX1) / 2 : CX0 + (Date.parse(series[i].item.properties.datetime) - first) / (last - first) * (CX1 - CX0);
 	};
+	// Use display-space spacing: acquisitions can cluster even in a long series.
+	// Reserve the last date first so the newest acquisition always remains legible.
+	const seriesLabelIndices = $derived.by(() => {
+		const labels = new Set<number>();
+		if (!series.length) return labels;
+		const last = series.length - 1;
+		let previousX = -Infinity;
+		for (let i = 0; i < last; i++) {
+			const x = sx(i, series.length);
+			if (x - previousX >= 100 && sx(last, series.length) - x >= 100) {
+				labels.add(i); previousX = x;
+			}
+		}
+		labels.add(last);
+		return labels;
+	});
 	const seriesSegments = $derived.by(() => {
 		const segments: string[] = []; let current: string[] = [];
 		series.forEach((row, i) => {
@@ -1301,8 +1317,8 @@
 		<button onclick={locate} disabled={locationBusy}>{locationBusy ? t('locationBusy') : t('locationBtn')}</button>
 		{#if locationMessage}<span role="status">{locationMessage}</span>{/if}
 		<div class="seg" role="group" aria-label={t('mapBasemapGroup')}>
-			<button class:active={basemap === 'osm'} aria-pressed={basemap === 'osm'} onclick={() => (basemap = 'osm')}>{t('mapBasemapOsm')}</button>
-			<button class:active={basemap === 'esri'} aria-pressed={basemap === 'esri'} onclick={() => (basemap = 'esri')} title={t('mapBasemapEsriTitle')}>{t('mapBasemapEsri')}</button>
+			<button class:active={basemap === 'osm'} aria-pressed={basemap === 'osm'} aria-label={t('mapBasemapOsm')} onclick={() => (basemap = 'osm')}>{t('mapBasemapOsm')}</button>
+			<button class:active={basemap === 'esri'} aria-pressed={basemap === 'esri'} aria-label={t('mapBasemapEsri')} onclick={() => (basemap = 'esri')} title={t('mapBasemapEsriTitle')}>{t('mapBasemapEsri')}</button>
 		</div>
 		<div class="seg" role="group" aria-label="2D / 3D">
 			<button class:active={!is3D} onclick={() => (is3D = false)}>2D</button>
@@ -1746,7 +1762,7 @@
 							<title>{t('seriesPointTitle', fmtDate(s.item.properties.datetime), s.v.toFixed(3), cloud(s.item)?.toFixed(0))}{offsetKnown(s.item) ? '' : ' · ' + t('offsetUnknown')}</title>
 						</circle>
 					{/if}
-					{#if i % Math.ceil(series.length / 6) === 0 || i === series.length - 1}
+					{#if seriesLabelIndices.has(i)}
 						<text x={sx(i, series.length)} y={CY1 + 22} fill="#98a6cc" font-size="14" text-anchor="middle">{seriesSource === 'yearly' ? fmtDate(s.item.properties.datetime).slice(0, 7) : fmtDate(s.item.properties.datetime)}</text>
 					{/if}
 				{/each}

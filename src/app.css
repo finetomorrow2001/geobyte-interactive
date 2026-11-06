@@ -276,4 +276,6 @@ canvas {
 @media (max-width: 800px), (pointer: coarse) {
  a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; max-width: 100%; padding-block: .35rem; overflow-wrap: anywhere; }
  .maplibregl-ctrl-attrib a { min-height: 44px; }
+ .seg button, .maplibregl-ctrl-attrib-button { min-width: 44px !important; }
+ .maplibregl-ctrl-attrib.maplibregl-compact { min-width: 44px; min-height: 44px; }
 }
