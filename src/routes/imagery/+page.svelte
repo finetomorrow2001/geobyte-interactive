@@ -216,6 +216,7 @@
 	let passDebounce: ReturnType<typeof setTimeout> | undefined;
 	/** 表示時刻 = 現在 + オフセット [分]。0 = LIVE */
 	let timeOffsetMin = $state(0);
+	let timeJumpAt = $state<number | null>(null);
 	/** 60 倍速再生（1 秒ごとに +1 分） */
 	let playing = $state(false);
 	/** 表示時刻の直前に撮影されたシーンへ画像 A を自動で切り替える */
@@ -806,7 +807,7 @@
 
 	function resetStudy() {
 		searchController?.abort(); nextScenes = null; endpointsOnly = false;
-		playing = false; timeOffsetMin = 0; selectedPass = null;
+		playing = false; timeOffsetMin = 0; selectedPass = null; timeJumpAt = null;
 		animationPlaying = false;
 		++annualVersion; ++searchVersion; ++pointVersion; ++seriesVersion; ++layerVersion;
 		pointLoading = false; seriesLoading = false; annualSnapshot = null;
@@ -825,6 +826,7 @@
 		resetStudy(); selectedArea = id; located = null; locationMarker?.remove();
 		const b = area.bbox;
 		mapA.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:36,duration:0});
+		search();
 	}
 	function changeAnnualCandidate(year: number, id: string) {
 		const row = yearly.find(y => y.year === year);
@@ -1087,17 +1089,17 @@
 	/** スライダー上の目盛り: 過去のシーン撮影時刻と未来の予測パス */
 	const timeTicks = $derived.by(() => {
 		const now = Date.now();
-		const out: { id: string; off: number; color: string; title: string; kind: 'scene' | 'pass' }[] = [];
+		const out: { id: string; off: number; at: number; color: string; title: string; kind: 'scene' | 'pass' }[] = [];
 		for (const it of items) {
 			const off = (Date.parse(it.properties.datetime) - now) / 60000;
 			if (off < rangeMin || off > 0) continue;
 			const sat = SATS.find((x) => x.id === it.properties.platform);
-			out.push({ id: `scene:${it.id}`, off, color: sat?.color ?? '#fff', kind: 'scene', title: t('mapTimeTickScene', fmtDate(it.properties.datetime), satLabel(it).split(' ')[0]) });
+			out.push({ id: `scene:${it.id}`, off, at: Date.parse(it.properties.datetime), color: sat?.color ?? '#fff', kind: 'scene', title: t('mapTimeTickScene', it.properties.datetime.slice(0, 16).replace('T', ' ') + ' UTC', satLabel(it).split(' ')[0]) });
 		}
 		for (const p of imagingPasses) {
 			const off = (p.time.getTime() - now) / 60000;
 			if (off > RANGE_MAX) continue;
-			out.push({ id: `pass:${p.sat}:${p.time.getTime()}`, off, color: satMeta(p.sat).color, kind: 'pass', title: t('mapTimeTickPass', fmtJst(p.time), satMeta(p.sat).name.replace('Sentinel-', 'S')) });
+			out.push({ id: `pass:${p.sat}:${p.time.getTime()}`, off, at: p.time.getTime(), color: satMeta(p.sat).color, kind: 'pass', title: t('mapTimeTickPass', fmtJst(p.time), satMeta(p.sat).name.replace('Sentinel-', 'S')) });
 		}
 		return out;
 	});
@@ -1154,6 +1156,7 @@
 
 	/** スライダーは ±10 日だが、パス行からのジャンプはその外でもよい */
 	function setOffset(m: number) {
+		timeJumpAt = null;
 		timeOffsetMin = m;
 		if (m === 0) playing = false;
 		tick();
@@ -1294,11 +1297,11 @@
 
 <div class="btn-row">
 	{#each places as p (p.id)}
-		<button class="ghost" onclick={() => goto(p)} title={L(p.hint)}>{L(p.name)}</button>
+		<button class="ghost" disabled={!mapReady} onclick={() => goto(p)} title={L(p.hint)}>{L(p.name)}</button>
 	{/each}
 	<!-- Public study regions: annual comparison uses the selected vicinity box. -->
 	{#each studyAreas as area (area.id)}
-		<button class="ghost" class:active={selectedArea === area.id} aria-pressed={selectedArea === area.id} onclick={() => chooseArea(area.id)} title={L(area.detail)}>{L(area.name)}</button>
+		<button class="ghost" disabled={!mapReady} class:active={selectedArea === area.id} aria-pressed={selectedArea === area.id} onclick={() => chooseArea(area.id)} title={L(area.detail)}>{L(area.name)}</button>
 	{/each}
 </div>
 {#if wildlifeTarget}
@@ -1321,8 +1324,8 @@
 			<button class:active={basemap === 'esri'} aria-pressed={basemap === 'esri'} aria-label={t('mapBasemapEsri')} onclick={() => (basemap = 'esri')} title={t('mapBasemapEsriTitle')}>{t('mapBasemapEsri')}</button>
 		</div>
 		<div class="seg" role="group" aria-label="2D / 3D">
-			<button class:active={!is3D} onclick={() => (is3D = false)}>2D</button>
-			<button class:active={is3D} onclick={() => (is3D = true)} title={t('map3dTitle')}>3D</button>
+			<button class:active={!is3D} aria-pressed={!is3D} onclick={() => (is3D = false)}>2D</button>
+			<button class:active={is3D} aria-pressed={is3D} onclick={() => (is3D = true)} title={t('map3dTitle')}>3D</button>
 			<button class="fs" class:active={fullscreen} onclick={toggleFullscreen} title={fullscreen ? t('mapFsExitTitle') : t('mapFsEnterTitle')} aria-label={fullscreen ? t('mapFsExit') : t('mapFsEnter')}>
 				{#if fullscreen}
 					<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v4H2M10 2v4h4M6 14v-4H2M10 14v-4h4" /></svg>
@@ -1350,14 +1353,35 @@
 				</div>
 				<div class="slider">
 					<input type="range" min={rangeMin} max={RANGE_MAX} step="10" value={timeOffsetMin} oninput={(e) => setOffset(+e.currentTarget.value)} aria-label={t('mapTimeOffsetAria', days)} />
-					<div class="ticks">
+					<div class="ticks" aria-hidden="true">
 						<!-- 現在 (LIVE) の位置 -->
 						<span class="now" style:left="{offToPct(0)}%"></span>
 						{#each timeTicks as tk (tk.id)}
-							<button class="tick" class:pass={tk.kind === 'pass'} style:left="{offToPct(tk.off)}%" style:--c={tk.color} title={tk.title} onclick={() => setOffset(Math.ceil(tk.off))} aria-label={tk.title}></button>
+							<span class="tick" class:pass={tk.kind === 'pass'} style:left="{offToPct(tk.off)}%" style:--c={tk.color}></span>
 						{/each}
 					</div>
 				</div>
+				<label class="time-jump">
+					<span>{t('mapTimeJump')}</span>
+					<select aria-label={t('mapTimeJump')} value="" disabled={!timeTicks.length} onchange={(e) => {
+						const selected = timeTicks.find(tk => tk.id === e.currentTarget.value);
+						if (selected) {
+							playing = false;
+							setOffset(Math.ceil((selected.at - Date.now()) / 60000));
+							timeJumpAt = shownTime.getTime();
+						}
+						e.currentTarget.value = '';
+					}}>
+						<option value="">{t('mapTimeJumpChoose')}</option>
+						<optgroup label={t('mapTimeJumpScenes')}>
+							{#each timeTicks.filter(tk => tk.kind === 'scene') as tk (tk.id)}<option value={tk.id}>{tk.title}</option>{/each}
+						</optgroup>
+						<optgroup label={t('mapTimeJumpPasses')}>
+							{#each timeTicks.filter(tk => tk.kind === 'pass') as tk (tk.id)}<option value={tk.id}>{tk.title}</option>{/each}
+						</optgroup>
+					</select>
+				</label>
+				<div class="jump-result" role="status">{timeJumpAt === null ? '' : t('mapTimeJumped', fmtJst(new Date(timeJumpAt)))}</div>
 				<label class="sync" title={t('mapTimeSyncTitle')}><input type="checkbox" bind:checked={syncScene} /> {t('mapTimeSync')}</label>
 				{#if nearestSat}
 					<div class="nearest"><span class="swatch" style:background={satMeta(nearestSat.id).color}></span>{t('mapTimeNearest', satMeta(nearestSat.id).name.replace('Sentinel-', 'S'), Math.round(nearestSat.km).toLocaleString())}</div>
@@ -1768,8 +1792,9 @@
 				{/each}
 			</svg>
             </div>
+			<p><a href="#series-values">{t('seriesTableLink')}</a></p>
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard users must be able to scroll the data table) -->
-			<div class="series-table" tabindex="0" role="region" aria-label={t('seriesTable')}>
+			<div id="series-values" class="series-table" tabindex="0" role="region" aria-label={t('seriesTable')}>
                 <table><caption>{t('seriesTable')}</caption><thead><tr><th scope="col">{t('seriesDate')}</th><th scope="col">{t('seriesScene')}</th><th scope="col">{t('seriesValue')}</th><th scope="col">{t('seriesQuality')}</th></tr></thead>
                 <tbody>{#each series as row (row.item.id)}<tr><th scope="row">{fmtDate(row.item.properties.datetime)}</th><td>{row.item.id}</td><td>{row.v === null ? t('pointMissing') : row.v.toFixed(3)}</td><td>{row.reason ? maskText(row.reason) : row.v === null ? t('pointMissing') : t('seriesValid')}{!offsetKnown(row.item) ? ' · ' + t('offsetUnknown') : ''}</td></tr>{/each}</tbody></table>
             </div>
@@ -2066,7 +2091,6 @@
 		border: none;
 		border-radius: 1px;
 		background: var(--c);
-		cursor: pointer;
 	}
 	.timebar .now {
 		position: absolute;
@@ -2081,10 +2105,9 @@
 		height: 6px;
 		opacity: 0.6;
 	}
-	.timebar .tick:hover {
-		height: 10px;
-		opacity: 1;
-	}
+	.timebar .jump-result { font-size: 0.8rem; overflow-wrap: anywhere; }
+	.timebar .time-jump { display: grid; gap: 0.25rem; margin-block: 0.5rem; }
+	.timebar .time-jump select { width: 100%; min-width: 0; min-height: 44px; font-size: 0.85rem; }
 	.timebar .sync {
 		display: flex;
 		align-items: center;

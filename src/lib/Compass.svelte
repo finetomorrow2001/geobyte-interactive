@@ -52,7 +52,7 @@
 </script>
 
 <button class="compass" onpointerdown={startDrag} onpointermove={moveDrag} onpointerup={endDrag} onpointercancel={endDrag} onclick={() => { if (!suppressClick) onreset?.(); suppressClick = false; }} onkeydown={(e) => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); onrotate?.(bearing + (e.key === 'ArrowLeft' ? -15 : 15)); } }} {title} aria-label={t('compassAria')}>
-	<svg viewBox="0 0 100 100" width="92" height="92">
+	<svg aria-hidden="true" viewBox="0 0 100 100" width="92" height="92">
 		<circle cx="50" cy="50" r="48" class="face" />
 		<g style:transform="rotate({-bearing}deg)" style:transform-origin="50px 50px">
 			{#each ticks as t (t)}
