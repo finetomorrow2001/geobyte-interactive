@@ -1292,7 +1292,7 @@
 
 <svelte:document onfullscreenchange={onFullscreenChange} />
 
-<div class="mapwrap" class:fullscreen bind:this={mapWrapEl}>
+<div id="study-map" tabindex="-1" class="mapwrap" class:fullscreen bind:this={mapWrapEl}>
 	<div bind:this={mapElA} class="map"></div>
 	<!-- 比較用の 2 枚目。B 選択時だけ生成され、右側 (swipe% 以降) のみ表示 -->
 	<div bind:this={mapElB} class="map mapB" class:hidden={!itemB} style:clip-path="inset(0 0 0 {swipe}%)"></div>
@@ -1749,8 +1749,8 @@
 				{/each}
 			</svg>
 			<div class="series-table" role="region" aria-label={t('seriesTable')}>
-                <table><caption>{t('seriesTable')}</caption><thead><tr><th scope="col">{t('seriesDate')}</th><th scope="col">{t('seriesValue')}</th><th scope="col">{t('seriesQuality')}</th></tr></thead>
-                <tbody>{#each series as row (row.item.id)}<tr><th scope="row">{fmtDate(row.item.properties.datetime)}</th><td>{row.v === null ? t('pointMissing') : row.v.toFixed(3)}</td><td>{row.reason ? maskText(row.reason) : row.v === null ? t('pointMissing') : t('seriesValid')}{!offsetKnown(row.item) ? ' · ' + t('offsetUnknown') : ''}</td></tr>{/each}</tbody></table>
+                <table><caption>{t('seriesTable')}</caption><thead><tr><th scope="col">{t('seriesDate')}</th><th scope="col">{t('seriesScene')}</th><th scope="col">{t('seriesValue')}</th><th scope="col">{t('seriesQuality')}</th></tr></thead>
+                <tbody>{#each series as row (row.item.id)}<tr><th scope="row">{fmtDate(row.item.properties.datetime)}</th><td>{row.item.id}</td><td>{row.v === null ? t('pointMissing') : row.v.toFixed(3)}</td><td>{row.reason ? maskText(row.reason) : row.v === null ? t('pointMissing') : t('seriesValid')}{!offsetKnown(row.item) ? ' · ' + t('offsetUnknown') : ''}</td></tr>{/each}</tbody></table>
             </div>
 			<p class="muted" style="font-size: 0.78rem">{@html t('seriesNote')} {#if series.some((x) => x.reason)}{t('seriesMaskedLegend')}{/if} {#if series.some((x) => !offsetKnown(x.item))}{t('offsetUnknownSeries')}{/if}</p>
 		{:else}

@@ -24,7 +24,7 @@
 
 <a class="skip-link" href="#main-content">{i18n.lang === 'ja' ? '本文へ移動' : 'Skip to content'}</a>
 <div class="shell">
-	<aside>
+	<div class="sidebar">
 		<header><a class="brand" href={languageUrl('/', i18n.lang)}>
 			<span class="logo">🛰</span>
 			<span>Satellite Data Lab</span>
@@ -44,14 +44,19 @@
 			{/each}
 		</nav>
 		<footer class="foot muted">{i18n.lang === 'ja' ? 'エンジニア向け 衛星データ利用 入門' : 'Satellite data for engineers'}</footer>
-	</aside>
+	</div>
 	<main id="main-content" tabindex="-1">
+		{#if page.url.pathname === '/imagery' || page.url.pathname === '/field'}
+			<a class="map-jump" href="#study-map">{i18n.lang === 'ja' ? '地図へ移動 ↓' : 'Jump to map ↓'}</a>
+		{/if}
 		{@render children()}
 	</main>
 </div>
 
 <style>
 	.nav-toggle { display: none; }
+	.brand, nav a { min-height: 44px; }
+	.map-jump { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: .5rem; }
 	.skip-link { position: fixed; top: -100px; left: 1rem; z-index: 20000; padding: .7rem; background: var(--bg-2); }
 	.skip-link:focus { top: 1rem; }
 	.shell {
@@ -59,7 +64,7 @@
 		grid-template-columns: 240px minmax(0, 1fr);
 		min-height: 100vh;
 	}
-	aside {
+	.sidebar {
 		border-right: 1px solid var(--border);
 		background: var(--bg-2);
 		padding: 1.2rem 1rem;
@@ -154,7 +159,7 @@
 		.shell {
 			grid-template-columns: minmax(0, 1fr);
 		}
-		aside {
+		.sidebar {
 			position: static;
 			height: auto;
 			border-right: none;
