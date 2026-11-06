@@ -1403,7 +1403,7 @@
 	{/if}
 	</div>
 	{#if tileErr.a || tileErr.b}
-		<div class="tile-error" role="alert">{#if tileErr.a}<div>{t('mapErrorA', tileErr.a)}{tileMsg.a ? ` — ${tileMsg.a.slice(0, 120)}` : ''}</div>{/if}{#if tileErr.b}<div>{t('mapErrorB', tileErr.b)}{tileMsg.b ? ` — ${tileMsg.b.slice(0, 120)}` : ''}</div>{/if}</div>
+		<div class="tile-error" role="alert">{#if tileErr.a}<div>{t('mapErrorA', tileErr.a)}{tileMsg.a ? ` — ${tileMsg.a.slice(0, 120)}` : ''}</div>{/if}{#if tileErr.b}<div>{t('mapErrorB', tileErr.b)}{tileMsg.b ? ` — ${tileMsg.b.slice(0, 120)}` : ''}</div>{/if}<button onclick={() => refreshLayers()}>{t('retryTiles')}</button></div>
 	{/if}
 	{#if tilesLoading || loading}
 		<div class="loading">{loading ? t('mapLoadingStac') : t('mapLoadingTiles')}</div>
@@ -1748,6 +1748,10 @@
 					{/if}
 				{/each}
 			</svg>
+			<div class="series-table" role="region" aria-label={t('seriesTable')}>
+                <table><caption>{t('seriesTable')}</caption><thead><tr><th scope="col">{t('seriesDate')}</th><th scope="col">{t('seriesValue')}</th><th scope="col">{t('seriesQuality')}</th></tr></thead>
+                <tbody>{#each series as row (row.item.id)}<tr><th scope="row">{fmtDate(row.item.properties.datetime)}</th><td>{row.v === null ? t('pointMissing') : row.v.toFixed(3)}</td><td>{row.reason ? maskText(row.reason) : row.v === null ? t('pointMissing') : t('seriesValid')}{!offsetKnown(row.item) ? ' · ' + t('offsetUnknown') : ''}</td></tr>{/each}</tbody></table>
+            </div>
 			<p class="muted" style="font-size: 0.78rem">{@html t('seriesNote')} {#if series.some((x) => x.reason)}{t('seriesMaskedLegend')}{/if} {#if series.some((x) => !offsetKnown(x.item))}{t('offsetUnknownSeries')}{/if}</p>
 		{:else}
 			<p class="muted" style="font-size: 0.9rem">{t('seriesEmpty')}</p>
@@ -1841,6 +1845,8 @@
 </div>
 
 <style>
+	.series-table { margin-top: 1rem; overflow-wrap: anywhere; }
+	.series-table caption { text-align: left; font-weight: 600; }
 	.archive-dates { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.6rem 0; }
 	.archive-dates label { display: flex; flex-direction: column; gap: 0.2rem; flex: 1; min-width: 140px; font-size: 0.85rem; }
 	.archive-dates input { min-width: 0; width: 100%; }
@@ -2363,4 +2369,21 @@
 		background: var(--c);
 		box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25), 0 0 10px var(--c);
 	}
+
+
+ @media (max-width: 800px) {
+  .mapwrap { height: auto; padding-top: 560px; overflow: clip; }
+  .map { height: 560px; bottom: auto; }
+  .map-ui { position: relative; top: auto; right: auto; padding: .7rem; align-items: flex-start; flex-direction: row; flex-wrap: wrap; background: var(--bg-2); }
+  .map-ui .compass-box { margin-left: auto; }
+  .map-ui .timebar { width: 100%; }
+  .map-captions { position: relative; bottom: auto; left: auto; width: 100%; padding: .6rem; }
+  .map-captions .switched { display: none; }
+  .tile-error { position: relative; top: auto; left: auto; overflow-wrap: anywhere; }
+  .divider { bottom: auto; height: 560px; }
+  .seg button, .seg-toggle, .timebar .row button { min-height: 44px; }
+  .timebar .row { flex-wrap: wrap; gap: 4px; }
+  .timebar .row button { min-width: 44px; }
+  .mapwrap.fullscreen, .mapwrap:fullscreen { overflow-y: auto; }
+ }
 </style>

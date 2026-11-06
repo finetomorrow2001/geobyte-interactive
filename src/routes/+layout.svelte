@@ -9,6 +9,7 @@
 	import { i18n, setLang, L, LANGS } from '$lib/i18n/lang.svelte';
 
 	let { children } = $props();
+	let navOpen = $state(false);
 	$effect(() => { if (browser) document.documentElement.lang = i18n.lang; });
 	$effect(() => {
 		const explicit = localeParam(page.url.searchParams.get('lang'));
@@ -21,33 +22,38 @@
 	}
 </script>
 
+<a class="skip-link" href="#main-content">{i18n.lang === 'ja' ? '本文へ移動' : 'Skip to content'}</a>
 <div class="shell">
 	<aside>
-		<a class="brand" href={languageUrl('/', i18n.lang)}>
+		<header><a class="brand" href={languageUrl('/', i18n.lang)}>
 			<span class="logo">🛰</span>
 			<span>Satellite Data Lab</span>
-		</a>
+		</a></header>
 		<div class="lang" role="group" aria-label="言語 / Language">
 			{#each LANGS as l (l)}
 				<button class:active={i18n.lang === l} onclick={() => chooseLanguage(l)} aria-pressed={i18n.lang === l} lang={l}>{l === 'ja' ? '日本語' : 'English'}</button>
 			{/each}
 		</div>
-		<nav>
+		<button class="nav-toggle ghost" aria-expanded={navOpen} aria-controls="module-navigation" onclick={() => navOpen = !navOpen}>{i18n.lang === 'ja' ? '学習メニュー' : 'Learning menu'} {navOpen ? '−' : '+'}</button>
+		<nav id="module-navigation" class:open={navOpen} aria-label={i18n.lang === 'ja' ? '学習メニュー' : 'Learning modules'}>
 			{#each modules as m, i (m.path)}
-				<a href={languageUrl(m.path, i18n.lang)} class:active={page.url.pathname === m.path}>
+				<a href={languageUrl(m.path, i18n.lang)} class:active={page.url.pathname === m.path} onclick={() => navOpen = false}>
 					<span class="idx">{String(i + 1).padStart(2, '0')}</span>
 					<span>{L(m.title)}</span>
 				</a>
 			{/each}
 		</nav>
-		<p class="foot muted">{i18n.lang === 'ja' ? 'エンジニア向け 衛星データ利用 入門' : 'Satellite data for engineers'}</p>
+		<footer class="foot muted">{i18n.lang === 'ja' ? 'エンジニア向け 衛星データ利用 入門' : 'Satellite data for engineers'}</footer>
 	</aside>
-	<main>
+	<main id="main-content" tabindex="-1">
 		{@render children()}
 	</main>
 </div>
 
 <style>
+	.nav-toggle { display: none; }
+	.skip-link { position: fixed; top: -100px; left: 1rem; z-index: 20000; padding: .7rem; background: var(--bg-2); }
+	.skip-link:focus { top: 1rem; }
 	.shell {
 		display: grid;
 		grid-template-columns: 240px minmax(0, 1fr);
@@ -143,6 +149,8 @@
 		width: 100%;
 	}
 	@media (max-width: 800px) {
+		.nav-toggle { display: block; align-self: flex-start; }
+		nav:not(.open) { display: none; }
 		.shell {
 			grid-template-columns: minmax(0, 1fr);
 		}
