@@ -1409,8 +1409,12 @@
 				{/if}
 				{#if imageAge && itemA}
 					<div class="imgage">
-						<div>{imageAge.future ? t('archiveBeforeFirst', fmtDate(itemA.properties.datetime)) : t('mapTimeImage', fmtDate(itemA.properties.datetime), imageAge.age)}</div>
-						<div class="muted">{imageAge.next ? t('mapTimeNextScene', fmtDate(imageAge.next.properties.datetime), satLabel(imageAge.next).split(' ')[0]) : t('mapTimeNoNext')}</div>
+						{#if syncScene}
+							<div>{imageAge.future ? t('archiveBeforeFirst', fmtDate(itemA.properties.datetime)) : t('mapTimeImage', fmtDate(itemA.properties.datetime), imageAge.age)}</div>
+							<div class="muted">{imageAge.next ? t('mapTimeNextScene', fmtDate(imageAge.next.properties.datetime), satLabel(imageAge.next).split(' ')[0]) : t('mapTimeNoNext')}</div>
+						{:else}
+							<div>{t('mapTimeImageFixed', fmtDate(itemA.properties.datetime))}</div>
+						{/if}
 					</div>
 				{/if}
 				<div class="key">
