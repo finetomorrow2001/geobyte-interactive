@@ -131,7 +131,7 @@
  <div class="actions"><button onclick={()=>{site='';applyBoundary();}}>{t('apply')}</button><label>{t('file')}<input type="file" accept=".geojson,.json,application/geo+json,application/json" onchange={fileChange} /></label><button class="ghost" onclick={()=>{drawing=!drawing;first=null;}}>{drawing?t('drawing'):t('draw')}</button></div>
  <p class="muted">{t('privacy')}</p>
 </section>
-<div class="field-map" bind:this={mapEl} role="region" aria-label={t('map')}></div>
+<div id="study-map" tabindex="-1" class="field-map" bind:this={mapEl} role="region" aria-label={t('map')}></div>
 <p class="muted">{display==='difference'?t('legend'):t(metric)} · {t('method')} · {t('spacing')}: {spacingMeters(geometry,grid).x.toFixed(1)} × {spacingMeters(geometry,grid).y.toFixed(1)} m</p>
 {#if canceled}<p role="status" class="muted">{t('canceled')}</p>{/if}
 {#if error}<p role="alert" class="notice">{t('error')}: {error}</p>{/if}
