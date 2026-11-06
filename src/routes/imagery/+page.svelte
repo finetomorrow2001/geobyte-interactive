@@ -807,7 +807,7 @@
 
 	function resetStudy() {
 		searchController?.abort(); nextScenes = null; endpointsOnly = false;
-		playing = false; timeOffsetMin = 0; selectedPass = null;
+		playing = false; timeOffsetMin = 0; selectedPass = null; timeJumpAt = null;
 		animationPlaying = false;
 		++annualVersion; ++searchVersion; ++pointVersion; ++seriesVersion; ++layerVersion;
 		pointLoading = false; seriesLoading = false; annualSnapshot = null;
@@ -826,6 +826,7 @@
 		resetStudy(); selectedArea = id; located = null; locationMarker?.remove();
 		const b = area.bbox;
 		mapA.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:36,duration:0});
+		search();
 	}
 	function changeAnnualCandidate(year: number, id: string) {
 		const row = yearly.find(y => y.year === year);
