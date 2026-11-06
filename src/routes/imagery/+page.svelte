@@ -1297,11 +1297,11 @@
 
 <div class="btn-row">
 	{#each places as p (p.id)}
-		<button class="ghost" onclick={() => goto(p)} title={L(p.hint)}>{L(p.name)}</button>
+		<button class="ghost" disabled={!mapReady} onclick={() => goto(p)} title={L(p.hint)}>{L(p.name)}</button>
 	{/each}
 	<!-- Public study regions: annual comparison uses the selected vicinity box. -->
 	{#each studyAreas as area (area.id)}
-		<button class="ghost" class:active={selectedArea === area.id} aria-pressed={selectedArea === area.id} onclick={() => chooseArea(area.id)} title={L(area.detail)}>{L(area.name)}</button>
+		<button class="ghost" disabled={!mapReady} class:active={selectedArea === area.id} aria-pressed={selectedArea === area.id} onclick={() => chooseArea(area.id)} title={L(area.detail)}>{L(area.name)}</button>
 	{/each}
 </div>
 {#if wildlifeTarget}
