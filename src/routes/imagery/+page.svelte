@@ -215,8 +215,10 @@
 	const satMarkers = new Map<MLMap, Partial<Record<SatId, ML.Marker>>>();
 	let tickTimer: ReturnType<typeof setInterval> | undefined;
 	let passDebounce: ReturnType<typeof setTimeout> | undefined;
-	/** 表示時刻 = 現在 + オフセット [分]。0 = LIVE */
+	/** スライダー表示用の現在からの相対分。選択時刻の基準は fixedTimeMs。 */
 	let timeOffsetMin = $state(0);
+	// null is LIVE; selected instants retain the source timestamp without minute rounding.
+	let fixedTimeMs = $state<number | null>(null);
 	let timeJumpAt = $state<number | null>(null);
 	/** 60 倍速再生（1 秒ごとに +1 分） */
 	let playing = $state(false);
@@ -233,10 +235,14 @@
 	const RANGE_MAX = 10 * 1440;
 	const offToPct = (off: number) => ((off - rangeMin) / (RANGE_MAX - rangeMin)) * 100;
 	let shownTime = $state(new Date());
-	const displayTime = () => new Date(Date.now() + timeOffsetMin * 60000);
+	const displayTime = () => new Date(fixedTimeMs ?? Date.now());
+	const fmtExactJst = (date: Date) => date.toLocaleString('ja-JP', {
+		timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit',
+		hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+	});
 	const fmtOffset = (m: number) => {
 		if (m === 0) return 'LIVE';
-		const a = Math.abs(m), sign = m < 0 ? '−' : '+';
+		const a = Math.floor(Math.abs(m)), sign = m < 0 ? '−' : '+';
 		if (a >= 1440) return `${sign}${Math.floor(a / 1440)}d ${Math.floor((a % 1440) / 60)}h`;
 		return `${sign}${a >= 60 ? `${Math.floor(a / 60)}h` : ''}${String(a % 60).padStart(a >= 60 ? 2 : 1, '0')}m`;
 	};
@@ -670,7 +676,7 @@
 	/** Two targeted requests reach either end of the selected dates without downloading all intervening metadata. */
 	async function compareEndpoints() {
 		if (!mapA) return;
-		animationPlaying = false; playing = false; timeOffsetMin = 0;
+		animationPlaying = false; playing = false; timeOffsetMin = 0; fixedTimeMs = null;
 		searchController?.abort();
 		const controller = searchController = new AbortController();
 		const version = ++searchVersion;
@@ -809,7 +815,7 @@
 	function resetStudy() {
 		selectedPlace = '';
 		searchController?.abort(); nextScenes = null; endpointsOnly = false;
-		playing = false; timeOffsetMin = 0; selectedPass = null; timeJumpAt = null;
+		playing = false; timeOffsetMin = 0; fixedTimeMs = null; selectedPass = null; timeJumpAt = null;
 		animationPlaying = false;
 		++annualVersion; ++searchVersion; ++pointVersion; ++seriesVersion; ++layerVersion;
 		pointLoading = false; seriesLoading = false; annualSnapshot = null;
@@ -896,7 +902,10 @@
 
 	function selectA(item: StacItem, fromSync = false, fromAnimation = false) {
 		if (!fromAnimation) animationPlaying = false;
-		if (itemA?.id === item.id) return;
+		if (itemA?.id === item.id) {
+			if (!fromSync && syncScene && fixedTimeMs !== null) jumpToTime(Date.parse(item.properties.datetime));
+			return;
+		}
 		itemA = item;
 		if (fromSync) {
 			switched = { date: fmtDate(item.properties.datetime), sat: satLabel(item).split(' ')[0] };
@@ -907,23 +916,21 @@
 		refreshLayers();
 		if (point) refreshPoint();
 		// スクラブ中に手で選んだら、表示時刻もそのシーンの撮影時刻へ（衛星が真上に来る）
-		if (!fromSync && syncScene && timeOffsetMin !== 0) {
+		if (!fromSync && syncScene && fixedTimeMs !== null) {
 			selectedPass = null;
-			// 切り上げ: 分単位に丸めても撮影時刻より前にならないように
-			timeOffsetMin = Math.ceil((Date.parse(item.properties.datetime) - Date.now()) / 60000);
-			tick();
+			jumpToTime(Date.parse(item.properties.datetime));
 		}
 	}
 
-	/** 表示時刻の直前に撮影されたシーン（無ければ最古）。分単位の丸め誤差を吸収するため 1 分の許容 */
+	/** 表示時刻以前に撮影されたシーン（無ければ最古）。未来の撮影は選ばない。 */
 	function sceneAt(t: Date): StacItem | undefined {
 		let best: StacItem | undefined;
 		let oldest: StacItem | undefined;
-		const limit = t.getTime() + 60000;
+		const limit = t.getTime();
 		for (const it of items) {
 			const d = Date.parse(it.properties.datetime);
 			if (!oldest || d < Date.parse(oldest.properties.datetime)) oldest = it;
-			if (d <= limit && (!best || d > Date.parse(best.properties.datetime))) best = it;
+			if (d <= limit && (!best || d > Date.parse(best.properties.datetime) || (d === Date.parse(best.properties.datetime) && it.id === itemA?.id))) best = it;
 		}
 		return best ?? oldest;
 	}
@@ -1037,15 +1044,16 @@
 		forMaps(ensureSatMarkers);
 		tick();
 		clearInterval(tickTimer);
-		tickTimer = setInterval(tick, 1000);
+		tickTimer = setInterval(() => tick(true), 1000);
 	}
 
 	/** 1 秒ごと: 表示時刻を進め、位置マーカー・軌跡・観測幅を更新 */
-	function tick() {
-		if (!tleSet) return;
-		if (playing) timeOffsetMin += 1;
+	function tick(advance = false) {
+		if (playing && advance) fixedTimeMs = (fixedTimeMs ?? Date.now()) + 60000;
 		const t = displayTime();
 		shownTime = t;
+		if (fixedTimeMs !== null) timeOffsetMin = (fixedTimeMs - Date.now()) / 60000;
+		if (!tleSet) return;
 		const next: Partial<Record<SatId, SubPoint>> = {};
 		for (const tle of tleSet.tles) {
 			const p = subPoint(tle, t);
@@ -1056,7 +1064,7 @@
 		satNow = next;
 		updateTracks(t);
 		// LIVE 以外では、表示時刻に対応するシーンへ画像を合わせる
-		if (syncScene && timeOffsetMin !== 0 && items.length) {
+		if (syncScene && fixedTimeMs !== null && items.length) {
 			const it = sceneAt(t);
 			if (it && it.id !== itemA?.id) selectA(it, true);
 		}
@@ -1077,15 +1085,15 @@
 
 	/** 表示時刻から見た画像 A の古さと、次に画像が変わる撮影 */
 	const imageAge = $derived.by(() => {
-		if (!itemA || timeOffsetMin === 0) return null;
+		if (!itemA || fixedTimeMs === null) return null;
 		const acq = Date.parse(itemA.properties.datetime);
 		const ageMin = Math.max(0, Math.round((shownTime.getTime() - acq) / 60000));
 		let next: StacItem | undefined;
 		for (const it of items) {
 			const d = Date.parse(it.properties.datetime);
-			if (d > shownTime.getTime() + 60000 && (!next || d < Date.parse(next.properties.datetime))) next = it;
+			if (d > shownTime.getTime() && (!next || d < Date.parse(next.properties.datetime))) next = it;
 		}
-		return { age: ageMin === 0 ? '0m' : fmtOffset(ageMin).replace(/^[+−]/, ''), future: acq > shownTime.getTime() + 60000, next };
+		return { age: ageMin === 0 ? '0m' : fmtOffset(ageMin).replace(/^[+−]/, ''), future: acq > shownTime.getTime(), next };
 	});
 
 	/** スライダー上の目盛り: 過去のシーン撮影時刻と未来の予測パス */
@@ -1096,12 +1104,12 @@
 			const off = (Date.parse(it.properties.datetime) - now) / 60000;
 			if (off < rangeMin || off > 0) continue;
 			const sat = SATS.find((x) => x.id === it.properties.platform);
-			out.push({ id: `scene:${it.id}`, off, at: Date.parse(it.properties.datetime), color: sat?.color ?? '#fff', kind: 'scene', title: t('mapTimeTickScene', it.properties.datetime.slice(0, 16).replace('T', ' ') + ' UTC', satLabel(it).split(' ')[0]) });
+			out.push({ id: `scene:${it.id}`, off, at: Date.parse(it.properties.datetime), color: sat?.color ?? '#fff', kind: 'scene', title: t('mapTimeTickScene', it.properties.datetime.slice(0, 19).replace('T', ' ') + ' UTC', satLabel(it).split(' ')[0]) });
 		}
 		for (const p of imagingPasses) {
 			const off = (p.time.getTime() - now) / 60000;
 			if (off > RANGE_MAX) continue;
-			out.push({ id: `pass:${p.sat}:${p.time.getTime()}`, off, at: p.time.getTime(), color: satMeta(p.sat).color, kind: 'pass', title: t('mapTimeTickPass', fmtJst(p.time), satMeta(p.sat).name.replace('Sentinel-', 'S')) });
+			out.push({ id: `pass:${p.sat}:${p.time.getTime()}`, off, at: p.time.getTime(), color: satMeta(p.sat).color, kind: 'pass', title: t('mapTimeTickPass', fmtExactJst(p.time), satMeta(p.sat).name.replace('Sentinel-', 'S')) });
 		}
 		return out;
 	});
@@ -1150,8 +1158,7 @@
 			selectedPass = null;
 		} else {
 			selectedPass = p;
-			playing = false;
-			timeOffsetMin = Math.round((p.time.getTime() - Date.now()) / 60000);
+			jumpToTime(p.time.getTime());
 		}
 		tick();
 	}
@@ -1160,7 +1167,21 @@
 	function setOffset(m: number) {
 		timeJumpAt = null;
 		timeOffsetMin = m;
+		fixedTimeMs = m === 0 ? null : Date.now() + m * 60000;
 		if (m === 0) playing = false;
+		tick();
+	}
+
+	function jumpToTime(at: number) {
+		playing = false;
+		fixedTimeMs = at;
+		timeJumpAt = at;
+		tick();
+	}
+
+	function shiftTime(minutes: number) {
+		timeJumpAt = null;
+		fixedTimeMs = displayTime().getTime() + minutes * 60000;
 		tick();
 	}
 
@@ -1344,14 +1365,14 @@
 		<button class="seg-toggle" class:active={showOrbit} onclick={() => (showOrbit = !showOrbit)} title={t('mapOrbitTitle')}>{t('mapOrbitBtn', showOrbit)}</button>
 		{#if showOrbit && tleSet}
 			<div class="timebar">
-				<div class="t"><span class="mono">{fmtJst(shownTime)}</span> <span class="off" class:live={timeOffsetMin === 0}>{fmtOffset(timeOffsetMin)}</span></div>
+				<div class="t"><time class="mono" datetime={shownTime.toISOString()}>{fmtExactJst(shownTime)}</time> <span class="off" class:live={fixedTimeMs === null}>{fixedTimeMs === null ? 'LIVE' : fmtOffset(timeOffsetMin)}</span></div>
 				<div class="row">
-					<button onclick={() => setOffset(timeOffsetMin - 1440)} title={t('mapTimeBack1d')}>−1d</button>
-					<button onclick={() => setOffset(timeOffsetMin - 60)} title={t('mapTimeBack1h')}>−1h</button>
+					<button onclick={() => shiftTime(-1440)} title={t('mapTimeBack1d')}>−1d</button>
+					<button onclick={() => shiftTime(-60)} title={t('mapTimeBack1h')}>−1h</button>
 					<button class:active={playing} onclick={() => { playing = !playing; }} title={t('mapTimePlay')}>{playing ? '❚❚' : '▶'}</button>
-					<button onclick={() => setOffset(timeOffsetMin + 60)} title={t('mapTimeFwd1h')}>+1h</button>
-					<button onclick={() => setOffset(timeOffsetMin + 1440)} title={t('mapTimeFwd1d')}>+1d</button>
-					<button class="live" disabled={timeOffsetMin === 0 && !playing} onclick={() => setOffset(0)}>LIVE</button>
+					<button onclick={() => shiftTime(+60)} title={t('mapTimeFwd1h')}>+1h</button>
+					<button onclick={() => shiftTime(+1440)} title={t('mapTimeFwd1d')}>+1d</button>
+					<button class="live" disabled={fixedTimeMs === null && !playing} onclick={() => setOffset(0)}>LIVE</button>
 				</div>
 				<div class="slider">
 					<input type="range" min={rangeMin} max={RANGE_MAX} step="10" value={timeOffsetMin} oninput={(e) => setOffset(+e.currentTarget.value)} aria-label={t('mapTimeOffsetAria', days)} />
@@ -1368,9 +1389,7 @@
 					<select aria-label={t('mapTimeJump')} value="" disabled={!timeTicks.length} onchange={(e) => {
 						const selected = timeTicks.find(tk => tk.id === e.currentTarget.value);
 						if (selected) {
-							playing = false;
-							setOffset(Math.ceil((selected.at - Date.now()) / 60000));
-							timeJumpAt = shownTime.getTime();
+							jumpToTime(selected.at);
 						}
 						e.currentTarget.value = '';
 					}}>
@@ -1383,7 +1402,7 @@
 						</optgroup>
 					</select>
 				</label>
-				<div class="jump-result" role="status">{timeJumpAt === null ? '' : t('mapTimeJumped', fmtJst(new Date(timeJumpAt)))}</div>
+				<div class="jump-result" role="status">{timeJumpAt === null ? '' : t('mapTimeJumped', fmtExactJst(new Date(timeJumpAt)))}</div>
 				<label class="sync" title={t('mapTimeSyncTitle')}><input type="checkbox" bind:checked={syncScene} /> {t('mapTimeSync')}</label>
 				{#if nearestSat}
 					<div class="nearest"><span class="swatch" style:background={satMeta(nearestSat.id).color}></span>{t('mapTimeNearest', satMeta(nearestSat.id).name.replace('Sentinel-', 'S'), Math.round(nearestSat.km).toLocaleString())}</div>
@@ -1812,7 +1831,7 @@
 		<h3>{t('metaTitle')} <span class="muted" style="font-weight: 400; font-size: 0.8rem">{t('metaSub')}</span></h3>
 		<div class="grid cols-3">
 			<div class="stat"><span class="label">{t('metaSat')}</span><span class="value" style="font-size: 1.1rem">{satLabel(itemA)}</span></div>
-			<div class="stat"><span class="label">{t('metaTime')}</span><span class="value" style="font-size: 1.1rem">{fmtJst(new Date(itemA.properties.datetime))}</span></div>
+			<div class="stat"><span class="label">{t('metaTime')}</span><time class="value" style="font-size: 1.1rem" datetime={itemA.properties.datetime}>{fmtExactJst(new Date(itemA.properties.datetime))}</time></div>
 			<div class="stat"><span class="label">{t('metaMgrs')}</span><span class="value" style="font-size: 1.1rem">{String(itemA.properties['grid:code'] ?? '').replace('MGRS-', '')}</span></div>
 			<div class="stat"><span class="label">{t('metaSun')}</span><span class="value" style="font-size: 1.1rem">{fmt(sunAz, 1)}° / {fmt(sunEl, 1)}°</span></div>
 			<div class="stat"><span class="label">{t('metaView')}</span><span class="value" style="font-size: 1.1rem">{fmt(num(itemA.properties['view:azimuth']), 1)}° / {fmt(num(itemA.properties['view:incidence_angle']), 1)}°</span></div>
