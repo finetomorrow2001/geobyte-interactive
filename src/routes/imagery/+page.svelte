@@ -1907,7 +1907,9 @@
 	.mapB.hidden {
 		visibility: hidden;
 	}
+	.map-ui > * { pointer-events: auto; }
 	.map-ui {
+		pointer-events: none;
 		position: absolute;
 		top: 10px;
 		right: 10px;
