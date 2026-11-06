@@ -1748,7 +1748,8 @@
 					{/if}
 				{/each}
 			</svg>
-			<div class="series-table" role="region" aria-label={t('seriesTable')}>
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard users must be able to scroll the data table) -->
+			<div class="series-table" tabindex="0" role="region" aria-label={t('seriesTable')}>
                 <table><caption>{t('seriesTable')}</caption><thead><tr><th scope="col">{t('seriesDate')}</th><th scope="col">{t('seriesScene')}</th><th scope="col">{t('seriesValue')}</th><th scope="col">{t('seriesQuality')}</th></tr></thead>
                 <tbody>{#each series as row (row.item.id)}<tr><th scope="row">{fmtDate(row.item.properties.datetime)}</th><td>{row.item.id}</td><td>{row.v === null ? t('pointMissing') : row.v.toFixed(3)}</td><td>{row.reason ? maskText(row.reason) : row.v === null ? t('pointMissing') : t('seriesValid')}{!offsetKnown(row.item) ? ' · ' + t('offsetUnknown') : ''}</td></tr>{/each}</tbody></table>
             </div>
@@ -1845,7 +1846,9 @@
 </div>
 
 <style>
-	.series-table { margin-top: 1rem; overflow-wrap: anywhere; }
+	.series-table { margin-top: 1rem; overflow-x: auto; }
+	.series-table table { min-width: 640px; }
+	.series-table td, .series-table th { white-space: nowrap; }
 	.series-table caption { text-align: left; font-weight: 600; }
 	.archive-dates { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0.6rem 0; }
 	.archive-dates label { display: flex; flex-direction: column; gap: 0.2rem; flex: 1; min-width: 140px; font-size: 0.85rem; }
