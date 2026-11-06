@@ -113,7 +113,7 @@
  const chartMin=$derived(dataMin-chartPad),chartMax=$derived(dataMax+chartPad);
  const firstTime=$derived(results.length?Date.parse(results[0].datetime):0);
  const lastTime=$derived(results.length?Date.parse(results.at(-1)!.datetime):1);
- const chartX=(date:string)=>75+(Date.parse(date)-firstTime)/Math.max(1,lastTime-firstTime)*Math.max(120,chartWidth-130);
+ const chartX=(date:string)=>75+(Date.parse(date)-firstTime)/Math.max(1,lastTime-firstTime)*Math.max(120,chartWidth-210);
  const chartY=(value:number)=>225-(value-chartMin)/(chartMax-chartMin)*200;
 </script>
 
@@ -146,10 +146,11 @@
 </section>
 {#if results.length}
  <section class="panel"><h2>{t('chart')}</h2><label>{t('metric')}<select bind:value={metric}>{#each FIELD_INDICES as k}<option value={k}>{t(k)}</option>{/each}</select></label><p>{t('chartNote')}</p>
- <div bind:clientWidth={chartWidth}><svg viewBox={`0 0 ${chartWidth} 270`} role="img" aria-label={t('chart')}>
-  {#each [chartMin,(chartMin+chartMax)/2,chartMax] as v}<line x1="55" y1={chartY(v)} x2={chartWidth-25} y2={chartY(v)} stroke="#526276" stroke-width=".5"/><text x="6" y={chartY(v)+5} fill="currentColor" font-size="12">{v.toFixed(3)}</text>{/each}
-  {#each chartRows as row,i}<g><title>{row.result.datetime}: {text(row.stats.median)} · {row.result.valid}/{row.result.total}</title>{#if row.valid&&row.stats.median!==null}{#if row.stats.q1!==null&&row.stats.q3!==null}<line x1={chartX(row.result.datetime)} x2={chartX(row.result.datetime)} y1={chartY(row.stats.q1)} y2={chartY(row.stats.q3)} stroke="#8da8be" stroke-width="3" />{/if}<circle cx={chartX(row.result.datetime)} cy={chartY(row.stats.median)} r="5" fill="#55e7b5" />{:else}<text x={chartX(row.result.datetime)} y="125" fill="currentColor">×</text>{/if}{#if i===0||i===chartRows.length-1||i%Math.max(1,Math.ceil(chartRows.length/Math.max(2,chartWidth/100)))===0}<text transform={`translate(${chartX(row.result.datetime)},245) rotate(-30)`} font-size="11" fill="currentColor">{row.result.datetime.slice(0,10)}</text>{/if}</g>{/each}
- </svg></div>
+ <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard users scroll the full-size chart) -->
+ <div class="field-chart-scroll" role="region" tabindex="0" aria-label={t('chart')}><div class="field-chart-surface" bind:clientWidth={chartWidth}><svg viewBox={`0 0 ${chartWidth} 270`} role="img" aria-label={t('chart')}>
+  {#each [chartMin,(chartMin+chartMax)/2,chartMax] as v}<line x1="55" y1={chartY(v)} x2={chartWidth-25} y2={chartY(v)} stroke="#526276" stroke-width=".5"/><text x="6" y={chartY(v)+5} fill="currentColor" font-size="14">{v.toFixed(3)}</text>{/each}
+  {#each chartRows as row,i}<g><title>{row.result.datetime}: {text(row.stats.median)} · {row.result.valid}/{row.result.total}</title>{#if row.valid&&row.stats.median!==null}{#if row.stats.q1!==null&&row.stats.q3!==null}<line x1={chartX(row.result.datetime)} x2={chartX(row.result.datetime)} y1={chartY(row.stats.q1)} y2={chartY(row.stats.q3)} stroke="#8da8be" stroke-width="3" />{/if}<circle cx={chartX(row.result.datetime)} cy={chartY(row.stats.median)} r="5" fill="#55e7b5" />{:else}<text x={chartX(row.result.datetime)} y="125" fill="currentColor">×</text>{/if}{#if i===0||i===chartRows.length-1||i%Math.max(1,Math.ceil(chartRows.length/Math.max(2,chartWidth/100)))===0}<text transform={`translate(${chartX(row.result.datetime)},245) rotate(-30)`} font-size="14" fill="currentColor">{row.result.datetime.slice(0,10)}</text>{/if}</g>{/each}
+ </svg></div></div>
  <div class="table-scroll"><table><thead><tr><th>{t('date')}</th><th>{t('valid')}</th><th>{t('median')}</th><th>{t('mean')}</th><th>{t('spread')}</th><th>{t('dark')}</th></tr></thead><tbody>{#each results as r}<tr><td title={r.id}>{r.datetime}<small>{r.id}</small></td><td>{r.valid}/{r.total} ({(r.valid/r.total*100).toFixed(1)}%)</td><td>{r.valid/r.total>=.5?text(summary(r.values[metric]).median):t('noData')}</td><td>{r.valid/r.total>=.5?text(summary(r.values[metric]).mean):'—'}</td><td>{r.valid/r.total>=.5?`${text(summary(r.values[metric]).q1)} … ${text(summary(r.values[metric]).q3)}`:'—'}</td><td>{r.dark}</td></tr>{/each}</tbody></table></div>
  </section>
  <section class="panel"><h2>{t('difference')}</h2><div class="actions"><label>{t('baseline')}<select bind:value={a}>{#each results as r}<option value={r.id}>{r.datetime.slice(0,10)} · {r.id}</option>{/each}</select></label><label>{t('comparison')}<select bind:value={b}>{#each results as r}<option value={r.id}>{r.datetime.slice(0,10)} · {r.id}</option>{/each}</select></label><label>{t('display')}<select bind:value={display}><option value="difference">{t('difference')}</option><option value="single">{t('single')}</option></select></label></div>
@@ -161,5 +162,6 @@
 {/if}
 <details><summary>{t('sources')}</summary><ul><li><a href="https://fieldstations.utexas.edu/field-stations">UT Austin Field Stations</a></li><li><a href="https://integrativebio.utexas.edu/directory/phuong-dao">Phuong Dao · UT Austin</a></li><li><a href="https://lair.etamu.edu/etd/1093/">Wild-pig damage: UAV and ground-truth research (2023)</a></li><li><a href="https://dataspace.copernicus.eu/data-collections/copernicus-sentinel-missions/sentinel-2">Copernicus Sentinel-2</a></li></ul></details>
 <style>
+ .field-chart-scroll{overflow-x:auto}.field-chart-surface{min-width:800px}
  .panel{margin:1rem 0}.notice{border-left:4px solid #e59b42;padding:.8rem;background:#e59b4211}.actions{display:flex;flex-wrap:wrap;gap:.7rem;align-items:end;margin:.7rem 0}label{display:flex;flex-direction:column;gap:.3rem;margin:.4rem 0}input,select,textarea{max-width:100%;min-width:0}textarea{width:100%;font-family:monospace}.field-map{height:460px;border:1px solid #354661;border-radius:12px;overflow:hidden}.scene-list{max-height:280px;overflow:auto}.scene{flex-direction:row;align-items:start;gap:.7rem}.scene input{width:auto}.scene small{display:block;color:var(--muted);overflow-wrap:anywhere}svg{display:block;width:100%;min-height:180px}.table-scroll{overflow:auto;max-width:100%}td small{display:block;color:var(--muted)}th,td{padding:.5rem;text-align:left;white-space:nowrap}h2{font-size:1.2rem} .actions label{max-width:100%}
 </style>

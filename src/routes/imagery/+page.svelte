@@ -1211,12 +1211,28 @@
 	const cloud = (it: StacItem) => it.properties['eo:cloud_cover'];
 
 	// 時系列チャート
-	const CX0 = 40, CX1 = 780, CY0 = 10, CY1 = 150;
+	const CX0 = 64, CX1 = 744, CY0 = 16, CY1 = 176;
 	const sx = (i: number, n: number) => {
 		if (n <= 1) return (CX0 + CX1) / 2;
 		const first = Date.parse(series[0].item.properties.datetime), last = Date.parse(series[n - 1].item.properties.datetime);
 		return last === first ? (CX0 + CX1) / 2 : CX0 + (Date.parse(series[i].item.properties.datetime) - first) / (last - first) * (CX1 - CX0);
 	};
+	// Use display-space spacing: acquisitions can cluster even in a long series.
+	// Reserve the last date first so the newest acquisition always remains legible.
+	const seriesLabelIndices = $derived.by(() => {
+		const labels = new Set<number>();
+		if (!series.length) return labels;
+		const last = series.length - 1;
+		let previousX = -Infinity;
+		for (let i = 0; i < last; i++) {
+			const x = sx(i, series.length);
+			if (x - previousX >= 100 && sx(last, series.length) - x >= 100) {
+				labels.add(i); previousX = x;
+			}
+		}
+		labels.add(last);
+		return labels;
+	});
 	const seriesSegments = $derived.by(() => {
 		const segments: string[] = []; let current: string[] = [];
 		series.forEach((row, i) => {
@@ -1301,8 +1317,8 @@
 		<button onclick={locate} disabled={locationBusy}>{locationBusy ? t('locationBusy') : t('locationBtn')}</button>
 		{#if locationMessage}<span role="status">{locationMessage}</span>{/if}
 		<div class="seg" role="group" aria-label={t('mapBasemapGroup')}>
-			<button class:active={basemap === 'osm'} onclick={() => (basemap = 'osm')}>{t('mapBasemapOsm')}</button>
-			<button class:active={basemap === 'esri'} onclick={() => (basemap = 'esri')} title={t('mapBasemapEsriTitle')}>{t('mapBasemapEsri')}</button>
+			<button class:active={basemap === 'osm'} aria-pressed={basemap === 'osm'} aria-label={t('mapBasemapOsm')} onclick={() => (basemap = 'osm')}>{t('mapBasemapOsm')}</button>
+			<button class:active={basemap === 'esri'} aria-pressed={basemap === 'esri'} aria-label={t('mapBasemapEsri')} onclick={() => (basemap = 'esri')} title={t('mapBasemapEsriTitle')}>{t('mapBasemapEsri')}</button>
 		</div>
 		<div class="seg" role="group" aria-label="2D / 3D">
 			<button class:active={!is3D} onclick={() => (is3D = false)}>2D</button>
@@ -1726,10 +1742,13 @@
 		</div>
 		{#if series.length}
 			{#if series.some(s => s.v !== null && Math.abs(s.v) > 1)}<p role="status" class="warn">{t('seriesRangeWarning')}</p>{/if}
-			<svg viewBox="0 0 800 180" width="100%" style="margin-top: 0.6rem" aria-label={t('seriesAria')}>
+			<p class="muted">{t('seriesScrollHint')}</p>
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard users scroll the full-size chart) -->
+            <div class="series-plot" role="region" tabindex="0" aria-label={t('seriesAria')}>
+            <svg viewBox="0 0 800 224" width="100%" role="img" aria-label={t('seriesAria')}>
 				{#each yTicks as t (t)}
 					<line x1={CX0} y1={sy(t)} x2={CX1} y2={sy(t)} stroke="#1c2950" />
-					<text x={CX0 - 6} y={sy(t) + 4} fill="#98a6cc" font-size="10" text-anchor="end">{+t.toFixed(2)}</text>
+					<text x={CX0 - 6} y={sy(t) + 4} fill="#98a6cc" font-size="14" text-anchor="end">{+t.toFixed(2)}</text>
 				{/each}
 				{#each seriesSegments as segment}<polyline points={segment} fill="none" stroke="#50fa7b" stroke-width="2" />{/each}
 				{#if series.some(row => row.item.id === itemA?.id)}{@const selected = series.findIndex(row => row.item.id === itemA?.id)}<line x1={sx(selected, series.length)} x2={sx(selected, series.length)} y1={CY0} y2={CY1} stroke="#f1fa8c" stroke-dasharray="4 3" />{/if}
@@ -1743,11 +1762,12 @@
 							<title>{t('seriesPointTitle', fmtDate(s.item.properties.datetime), s.v.toFixed(3), cloud(s.item)?.toFixed(0))}{offsetKnown(s.item) ? '' : ' · ' + t('offsetUnknown')}</title>
 						</circle>
 					{/if}
-					{#if i % Math.ceil(series.length / 6) === 0 || i === series.length - 1}
-						<text x={sx(i, series.length)} y={CY1 + 22} fill="#98a6cc" font-size="10" text-anchor="middle">{seriesSource === 'yearly' ? fmtDate(s.item.properties.datetime).slice(0, 7) : fmtDate(s.item.properties.datetime)}</text>
+					{#if seriesLabelIndices.has(i)}
+						<text x={sx(i, series.length)} y={CY1 + 22} fill="#98a6cc" font-size="14" text-anchor="middle">{seriesSource === 'yearly' ? fmtDate(s.item.properties.datetime).slice(0, 7) : fmtDate(s.item.properties.datetime)}</text>
 					{/if}
 				{/each}
 			</svg>
+            </div>
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard users must be able to scroll the data table) -->
 			<div class="series-table" tabindex="0" role="region" aria-label={t('seriesTable')}>
                 <table><caption>{t('seriesTable')}</caption><thead><tr><th scope="col">{t('seriesDate')}</th><th scope="col">{t('seriesScene')}</th><th scope="col">{t('seriesValue')}</th><th scope="col">{t('seriesQuality')}</th></tr></thead>
@@ -1846,6 +1866,8 @@
 </div>
 
 <style>
+	.series-plot { overflow-x: auto; }
+	.series-plot svg { display: block; min-width: 800px; }
 	.series-table { margin-top: 1rem; overflow-x: auto; }
 	.series-table table { min-width: 640px; }
 	.series-table td, .series-table th { white-space: nowrap; }
