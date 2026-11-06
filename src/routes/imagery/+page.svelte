@@ -87,6 +87,7 @@
 	let allowMissing = $state(false);
 	let yearlyCloud = $state(30);
 	let selectedArea = $state('');
+	let selectedPlace = $state(page.url.searchParams.has('item') ? '' : 'tokyo');
 	let annualQuery = $state('');
 	let searchVersion = 0;
 	let annualVersion = 0;
@@ -753,7 +754,7 @@
 
 	function goto(p: (typeof places)[number]) {
 		if (!mapA) return;
-		resetStudy(); selectedArea = ''; located = null; locationMarker?.remove();
+		resetStudy(); selectedArea = ''; selectedPlace = p.id; located = null; locationMarker?.remove();
 		mapA.jumpTo({ center: [p.center[1], p.center[0]], zoom: p.zoom });
 		itemB = null;
 		search();
@@ -806,6 +807,7 @@
 	const pct = (n: number, total: number, d = 1) => ((100 * n) / (total || 1)).toFixed(d);
 
 	function resetStudy() {
+		selectedPlace = '';
 		searchController?.abort(); nextScenes = null; endpointsOnly = false;
 		playing = false; timeOffsetMin = 0; selectedPass = null; timeJumpAt = null;
 		animationPlaying = false;
@@ -1297,7 +1299,7 @@
 
 <div class="btn-row">
 	{#each places as p (p.id)}
-		<button class="ghost" disabled={!mapReady} onclick={() => goto(p)} title={L(p.hint)}>{L(p.name)}</button>
+		<button class="ghost" disabled={!mapReady} class:active={selectedPlace === p.id} aria-pressed={selectedPlace === p.id} onclick={() => goto(p)} title={L(p.hint)}>{L(p.name)}</button>
 	{/each}
 	<!-- Public study regions: annual comparison uses the selected vicinity box. -->
 	{#each studyAreas as area (area.id)}
@@ -2071,6 +2073,9 @@
 	}
 	.timebar input[type='range'] {
 		width: 100%;
+		height: 44px;
+		min-height: 44px;
+		cursor: pointer;
 		margin: 0;
 		accent-color: var(--accent);
 		display: block;
